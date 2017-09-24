@@ -50,10 +50,11 @@ type config struct {
 	CPUProfile  string `long:"cpuprofile" description:"File for CPU profiling."`
 
 	// DB
-	DBHostPort string `long:"dbhost" description:"DB host"`
-	DBUser     string `long:"dbuser" description:"DB user"`
-	DBPass     string `long:"dbpass" description:"DB pass"`
-	DBName     string `long:"dbname" description:"DB name"`
+	DBHostPort   string `long:"dbhost" description:"DB host"`
+	DBUser       string `long:"dbuser" description:"DB user"`
+	DBPass       string `long:"dbpass" description:"DB pass"`
+	DBName       string `long:"dbname" description:"DB name"`
+	DropDBTables bool   `long:"droptables" description:"Drop/delete DB tables."`
 
 	// RPC client options
 	DcrdUser         string `long:"dcrduser" description:"Daemon RPC user name"`

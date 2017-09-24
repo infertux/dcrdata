@@ -3,10 +3,19 @@ package dcrpg
 import (
 	"database/sql"
 	"fmt"
+	"regexp"
+	"strconv"
 
 	// Start the PostgreSQL driver
 	_ "github.com/lib/pq"
 )
+
+//var tables = []string{"blocks", "transactions", "vouts"}
+var tables = map[string]string{
+	"blocks":       createBlockTable,
+	"transactions": createTransactionTable,
+	"vouts":        createVoutTable,
+}
 
 const (
 	createBlockTable = `CREATE TABLE blocks (  
@@ -79,6 +88,13 @@ const (
 	);`
 )
 
+func TableExists(db *sql.DB, tableName string) (bool, error) {
+	rows, err := db.Query(`select relname from pg_class where relname = $1`,
+		tableName)
+	defer rows.Close()
+	return rows.Next(), err
+}
+
 func Connect(host, port, user, pass, dbname string) (*sql.DB, error) {
 	var psqlInfo string
 	if pass == "" {
@@ -101,22 +117,72 @@ func Connect(host, port, user, pass, dbname string) (*sql.DB, error) {
 	return db, err
 }
 
-func CreateTables(db *sql.DB) error {
-	_, err := db.Exec(createBlockTable)
+func DropTables(db *sql.DB) {
+	for tableName := range tables {
+		fmt.Printf("DROPPING the \"%s\" table.\n", tableName)
+		if err := dropTable(db, tableName); err != nil {
+			fmt.Println(err)
+		}
+	}
+
+	_, err := db.Exec(`DROP TYPE IF EXISTS vin;`)
 	if err != nil {
 		fmt.Println(err)
 	}
-	_, err = db.Exec(createVinType)
-	if err != nil {
-		fmt.Println(err)
-	}
-	_, err = db.Exec(createTransactionTable)
-	if err != nil {
-		fmt.Println(err)
-	}
-	_, err = db.Exec(createVoutTable)
+}
+
+func dropTable(db *sql.DB, tableName string) error {
+	_, err := db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, tableName))
 	if err != nil {
 		fmt.Println(err)
 	}
 	return err
+}
+
+func CreateTables(db *sql.DB) error {
+	var err error
+	for tableName, createCommand := range tables {
+		var exists bool
+		exists, err = TableExists(db, tableName)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Does the \"%s\" table exist? %v\n", tableName, exists)
+		if !exists {
+			fmt.Printf("Creating the \"%s\" table.\n", tableName)
+			_, err = db.Exec(createCommand)
+			if err != nil {
+				return err
+			}
+			_, err = db.Exec(fmt.Sprintf(`COMMENT ON TABLE %s
+				IS 'v1';`, tableName))
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return err
+}
+
+func TableVersions(db *sql.DB) map[string]int32 {
+	versions := map[string]int32{}
+	for tableName := range tables {
+		Result := db.QueryRow(`select obj_description($1::regclass);`, tableName)
+		var s string
+		v := int(-1)
+		if Result != nil {
+			Result.Scan(&s)
+			re := regexp.MustCompile(`^v(\d+)$`)
+			subs := re.FindStringSubmatch(s)
+			if len(subs) > 1 {
+				var err error
+				v, err = strconv.Atoi(subs[1])
+				if err != nil {
+					fmt.Println(err)
+				}
+			}
+		}
+		versions[tableName] = int32(v)
+	}
+	return versions
 }

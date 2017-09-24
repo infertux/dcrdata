@@ -86,9 +86,19 @@ func mainCore() int {
 		return 4
 	}
 
+	if cfg.DropDBTables {
+		dcrpg.DropTables(db)
+		return 0
+	}
+
 	if err = dcrpg.CreateTables(db); err != nil {
 		fmt.Println(err)
 		return 5
+	}
+
+	vers := dcrpg.TableVersions(db)
+	for tab, ver := range vers {
+		fmt.Printf("Table %s: v%d\n", tab, ver)
 	}
 
 	// Ctrl-C to shut down.
