@@ -26,22 +26,22 @@ const (
 		version INT4,
 		merkle_root TEXT,
 		stake_root TEXT,
-		numtx INT2,
+		numtx INT4,
 		txDbIDs INT8[],
-		num_rtx INT2,
+		num_rtx INT4,
 		tx TEXT[],
-		num_stx INT2,
+		num_stx INT4,
 		stx TEXT[],
 		time INT8,
 		nonce INT4,
-		vote_bits INT4,
+		vote_bits INT2,
 		final_state BYTEA,
 		voters INT2,
 		fresh_stake INT2,
 		revocations INT2,
 		pool_size INT4,
-		bits TEXT,
-		sbits FLOAT8,
+		bits INT4,
+		sbits INT8,
 		difficulty FLOAT8,
 		extra_data BYTEA,
 		stake_version INT4,
@@ -50,13 +50,14 @@ const (
 	);`
 
 	createVinType = `CREATE TYPE vin AS (
-		coinbase TEXT,
 		prev_tx_hash TEXT,
 		prev_tx_index INTEGER,
-		tree SMALLINT,
+		prev_tx_tree SMALLINT,
 		sequence INTEGER,
-		amount_in DOUBLE PRECISION,
-		script_hex TEXT
+		value_in DOUBLE PRECISION,
+		block_height INT4,
+		block_index INT4,
+		script_hex BYTEA
 	);`
 
 	createTransactionTable = `CREATE TABLE transactions (
@@ -77,14 +78,13 @@ const (
 	createVoutTable = `CREATE TABLE vouts (
 		id SERIAL8 PRIMARY KEY,
 		tx_db_id INT8,
-		value DOUBLE PRECISION,
-		n INT4,
+		value INT8,
+		ind INT4,
 		version INT2,
-		pkscript TEXT,
+		pkscript BYTEA,
 		script_req_sigs INT4,
 		script_type TEXT,
 		script_addresses TEXT[],
-		script_commit_amount DOUBLE PRECISION
 	);`
 )
 

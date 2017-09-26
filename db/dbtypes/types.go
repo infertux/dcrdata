@@ -40,30 +40,30 @@ func (p *JSONB) Scan(src interface{}) error {
 
 // Vout defines a transaction output
 type Vout struct {
-	txDbID           int64
-	Value            float64          `json:"value"`
-	N                uint32           `json:"n"`
+	// txDbID           int64
+	Value            int64            `json:"value"`
+	Ind              uint32           `json:"ind"`
 	Version          uint16           `json:"version"`
-	ScriptPubKey     string           `json:"pkScriptHex"`
+	ScriptPubKey     []byte           `json:"pkScriptHex"`
 	ScriptPubKeyData ScriptPubKeyData `json:"pkScript"`
 }
 
 // ScriptPubKeyData is part of the result of decodescript(ScriptPubKeyHex)
 type ScriptPubKeyData struct {
-	ReqSigs   int32    `json:"reqSigs"`
+	ReqSigs   uint32   `json:"reqSigs"`
 	Type      string   `json:"type"`
 	Addresses []string `json:"addresses"`
-	CommitAmt float64  `json:"commitamt"`
 }
 
 type VinTxProperty struct {
-	Coinbase    string  `json:"coinbase"`
-	PrevTxHash  string  `json:"prevtxhash"`
-	PrevTxIndex uint32  `json:"prevvoutidx"`
-	Tree        int8    `json:"tree"`
-	Sequence    uint32  `json:"sequence"`
-	AmountIn    float64 `json:"amountin"`
-	ScriptHex   string  `json:"scripthex"`
+	PrevTxHash  string `json:"prevtxhash"`
+	PrevTxIndex uint32 `json:"prevvoutidx"`
+	PrevTxTree  uint16 `json:"tree"`
+	Sequence    uint32 `json:"sequence"`
+	ValueIn     int64  `json:"amountin"`
+	BlockHeight uint32 `json:"blockheight"`
+	BlockIndex  uint32 `json:"blockindex"`
+	ScriptHex   []byte `json:"scripthex"`
 }
 
 type Vin struct {
@@ -90,12 +90,12 @@ type Tx struct {
 	blockDbID  int64
 	BlockHash  string
 	BlockIndex uint32
-	Txid       string `json:"txid"`
-	Version    int32  `json:"version"`
-	Locktime   uint32 `json:"locktime"`
-	Expiry     uint32 `json:"expiry"`
-	NumVin     uint32 `json:"numvin"`
-	Vin        []Vin  `json:"vin"`
+	TxID       string          `json:"txid"`
+	Version    uint16          `json:"version"`
+	Locktime   uint32          `json:"locktime"`
+	Expiry     uint32          `json:"expiry"`
+	NumVin     uint32          `json:"numvin"`
+	Vin        []VinTxProperty `json:"vin"`
 	VoutDbIds  []int64
 	// NOTE: VoutDbIds may not be needed if there is a vout table since each
 	// vout will have a tx_dbid
@@ -103,27 +103,30 @@ type Tx struct {
 
 type Block struct {
 	Hash         string `json:"hash"`
-	Size         int32  `json:"size"`
-	Height       int64  `json:"height"`
-	Version      int32  `json:"version"`
+	Size         uint32 `json:"size"`
+	Height       uint32 `json:"height"`
+	Version      uint32 `json:"version"`
 	MerkleRoot   string `json:"merkleroot"`
 	StakeRoot    string `json:"stakeroot"`
-	txDbIDs      []int64
+	NumTx        uint32
+	TxDbIDs      []int64
+	NumRegTx     uint32
 	Tx           []string `json:"tx"`
+	NumStakeTx   uint32
 	STx          []string `json:"stx"`
-	Time         int64    `json:"time"`
+	Time         uint32   `json:"time"`
 	Nonce        uint32   `json:"nonce"`
 	VoteBits     uint16   `json:"votebits"`
-	FinalState   string   `json:"finalstate"`
+	FinalState   [6]byte  `json:"finalstate"`
 	Voters       uint16   `json:"voters"`
 	FreshStake   uint8    `json:"freshstake"`
 	Revocations  uint8    `json:"revocations"`
 	PoolSize     uint32   `json:"poolsize"`
-	Bits         string   `json:"bits"`
-	SBits        float64  `json:"sbits"`
+	Bits         uint32   `json:"bits"`
+	SBits        int64    `json:"sbits"`
 	Difficulty   float64  `json:"difficulty"`
-	ExtraData    string   `json:"extradata"`
+	ExtraData    [32]byte `json:"extradata"`
 	StakeVersion uint32   `json:"stakeversion"`
 	PreviousHash string   `json:"previousblockhash"`
-	NextHash     string   `json:"nextblockhash"`
+	//NextHash     string   `json:"nextblockhash"`
 }
