@@ -13,6 +13,7 @@ var createTableStatements = map[string]string{
 	"blocks":       internal.CreateBlockTable,
 	"transactions": internal.CreateTransactionTable,
 	"vouts":        internal.CreateVoutTable,
+	"block_chain":  internal.CreateBlockPrevNextTable,
 }
 
 func TableExists(db *sql.DB, tableName string) (bool, error) {

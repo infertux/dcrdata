@@ -6,15 +6,12 @@ import (
 	"os"
 	"os/signal"
 	"runtime/pprof"
-	"strconv"
 
 	"github.com/btcsuite/btclog"
 	"github.com/dcrdata/dcrdata/db/dbtypes"
 	"github.com/dcrdata/dcrdata/db/dcrpg"
 	"github.com/dcrdata/dcrdata/rpcutils"
 	"github.com/dcrdata/dcrdata/txhelpers"
-	"github.com/decred/dcrd/chaincfg/chainhash"
-	"github.com/decred/dcrd/txscript"
 	"github.com/decred/dcrd/wire"
 	"github.com/decred/dcrrpcclient"
 )
@@ -116,108 +113,174 @@ func mainCore() error {
 		close(quit)
 	}()
 
-	blockHash, _, err := client.GetBestBlock()
+	// Get chain servers's best block
+	_, height, err := client.GetBestBlock()
 	if err != nil {
-		log.Error("GetBestBlock failed: ", err)
-		return err
-	}
-	msgBlock, err := client.GetBlock(blockHash)
-	if err != nil {
-		log.Error("GetBlock failed: ", err)
-		return err
-	}
-	//block := dcrutil.NewBlock(msgBlock)
-	//gbvr, _ := client.GetBlockVerbose(blockHash)
-
-	blockHeader := msgBlock.Header
-
-	var txHashStrs []string
-	txHashes := msgBlock.TxHashes()
-	for i := range txHashes {
-		txHashStrs = append(txHashStrs, txHashes[i].String())
+		return fmt.Errorf("GetBestBlock failed: %v", err)
 	}
 
-	var stxHashStrs []string
-	stxHashes := msgBlock.STxHashes()
-	for i := range stxHashes {
-		stxHashStrs = append(stxHashStrs, stxHashes[i].String())
-	}
+	// genesisHash, err := client.GetBlockHash(0)
+	// if err != nil {
+	// 	log.Error("GetBlockHash failed: ", err)
+	// 	return err
+	// }
+	//prev_hash := genesisHash.String()
 
-	dbBlock := dbtypes.Block{
-		Hash:       blockHash.String(),
-		Size:       uint32(msgBlock.SerializeSize()),
-		Height:     blockHeader.Height,
-		Version:    uint32(blockHeader.Version),
-		MerkleRoot: blockHeader.MerkleRoot.String(),
-		StakeRoot:  blockHeader.StakeRoot.String(),
-		NumTx:      uint32(len(msgBlock.Transactions) + len(msgBlock.STransactions)),
-		// nil []int64 for TxDbIDs
-		NumRegTx:     uint32(len(msgBlock.Transactions)),
-		Tx:           txHashStrs,
-		NumStakeTx:   uint32(len(msgBlock.STransactions)),
-		STx:          stxHashStrs,
-		Time:         uint64(blockHeader.Timestamp.Unix()),
-		Nonce:        uint64(blockHeader.Nonce),
-		VoteBits:     blockHeader.VoteBits,
-		FinalState:   blockHeader.FinalState[:],
-		Voters:       blockHeader.Voters,
-		FreshStake:   blockHeader.FreshStake,
-		Revocations:  blockHeader.Revocations,
-		PoolSize:     blockHeader.PoolSize,
-		Bits:         blockHeader.Bits,
-		SBits:        uint64(blockHeader.SBits),
-		Difficulty:   txhelpers.GetDifficultyRatio(blockHeader.Bits, activeChain),
-		ExtraData:    blockHeader.ExtraData[:],
-		StakeVersion: blockHeader.StakeVersion,
-		PreviousHash: blockHeader.PrevBlock.String(),
-	}
+	lastBlockDbID := int64(-1)
 
-	// regular transactions
-	dbTransactions, dbTxVouts := processTransactions(msgBlock.Transactions, blockHash)
+	for ib := int64(0); ib <= height; ib++ {
+		// check for quit signal
+		select {
+		case <-quit:
+			log.Infof("Rescan cancelled at height %d.", ib)
+			return nil
+		default:
+		}
 
-	dbBlock.TxDbIDs = make([]uint64, len(dbTransactions))
-	for it, dbtx := range dbTransactions {
-		vouts := dbTxVouts[it]
-		dbtx.VoutDbIds = make([]uint64, len(vouts))
-		for iv, dbvout := range vouts {
-			dbtx.VoutDbIds[iv], err = dcrpg.InsertVout(db, dbvout)
+		block, blockHash, err := rpcutils.GetBlock(ib, client)
+		if err != nil {
+			return fmt.Errorf("GetBlock failed (%s): %v", blockHash, err)
+		}
+		msgBlock := block.MsgBlock()
+
+		// Create the dbtypes.Block structure
+		blockHeader := msgBlock.Header
+
+		// convert each transaction hash to a hex string
+		var txHashStrs []string
+		txHashes := msgBlock.TxHashes()
+		for i := range txHashes {
+			txHashStrs = append(txHashStrs, txHashes[i].String())
+		}
+
+		var stxHashStrs []string
+		stxHashes := msgBlock.STxHashes()
+		for i := range stxHashes {
+			stxHashStrs = append(stxHashStrs, stxHashes[i].String())
+		}
+
+		// Assemble the block
+		dbBlock := dbtypes.Block{
+			Hash:       blockHash.String(),
+			Size:       uint32(msgBlock.SerializeSize()),
+			Height:     blockHeader.Height,
+			Version:    uint32(blockHeader.Version),
+			MerkleRoot: blockHeader.MerkleRoot.String(),
+			StakeRoot:  blockHeader.StakeRoot.String(),
+			NumTx:      uint32(len(msgBlock.Transactions) + len(msgBlock.STransactions)),
+			// nil []int64 for TxDbIDs
+			NumRegTx:     uint32(len(msgBlock.Transactions)),
+			Tx:           txHashStrs,
+			NumStakeTx:   uint32(len(msgBlock.STransactions)),
+			STx:          stxHashStrs,
+			Time:         uint64(blockHeader.Timestamp.Unix()),
+			Nonce:        uint64(blockHeader.Nonce),
+			VoteBits:     blockHeader.VoteBits,
+			FinalState:   blockHeader.FinalState[:],
+			Voters:       blockHeader.Voters,
+			FreshStake:   blockHeader.FreshStake,
+			Revocations:  blockHeader.Revocations,
+			PoolSize:     blockHeader.PoolSize,
+			Bits:         blockHeader.Bits,
+			SBits:        uint64(blockHeader.SBits),
+			Difficulty:   txhelpers.GetDifficultyRatio(blockHeader.Bits, activeChain),
+			ExtraData:    blockHeader.ExtraData[:],
+			StakeVersion: blockHeader.StakeVersion,
+			PreviousHash: blockHeader.PrevBlock.String(),
+		}
+
+		// Extract transactions and their vouts. Insert vouts into their pg table,
+		// returning their PK IDs, which are stored in the corresponding transaction
+		// data struct. Insert each transaction once they are updated with their
+		// vouts' IDs, returning the transaction PK ID, which are stored in the
+		// containing block data struct.
+
+		// regular transactions
+		dbTransactions, dbTxVouts := dbtypes.ExtractBlockTransactions(msgBlock,
+			wire.TxTreeRegular, activeChain)
+
+		dbBlock.TxDbIDs = make([]uint64, len(dbTransactions))
+		for it, dbtx := range dbTransactions {
+			// vouts := dbTxVouts[it]
+			// dbtx.VoutDbIds = make([]uint64, len(vouts))
+			// for iv, dbvout := range vouts {
+			// 	// Store the vout PK ID in the transaction
+			// 	dbtx.VoutDbIds[iv], err = dcrpg.InsertVout(db, dbvout)
+			// 	if err != nil {
+			// 		fmt.Println(err)
+			// 	}
+			// }
+
+			dbtx.VoutDbIds, err = dcrpg.InsertVouts(db, dbTxVouts[it])
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			// Store the tx PK ID in the block
+			dbBlock.TxDbIDs[it], err = dcrpg.InsertTx(db, dbtx)
 			if err != nil {
 				fmt.Println(err)
 			}
 		}
 
-		dbBlock.TxDbIDs[it], err = dcrpg.InsertTx(db, dbtx)
-		if err != nil {
-			fmt.Println(err)
-		}
-	}
+		// stake transactions
+		dbSTransactions, dbSTxVouts := dbtypes.ExtractBlockTransactions(msgBlock,
+			wire.TxTreeStake, activeChain)
 
-	// stake transactions, txTree := wire.TxTreeStake
-	dbSTransactions, dbSTxVouts := processTransactions(msgBlock.STransactions, blockHash)
+		dbBlock.STxDbIDs = make([]uint64, len(dbSTransactions))
+		for it, dbtx := range dbSTransactions {
+			// vouts := dbSTxVouts[it]
+			// dbtx.VoutDbIds = make([]uint64, len(vouts))
+			// for iv, dbvout := range vouts {
+			// 	// Store the vout PK ID in the transaction
+			// 	dbtx.VoutDbIds[iv], err = dcrpg.InsertVout(db, dbvout)
+			// 	if err != nil {
+			// 		fmt.Println(err)
+			// 	}
+			// }
 
-	dbBlock.STxDbIDs = make([]uint64, len(dbSTransactions))
-	for it, dbtx := range dbSTransactions {
-		vouts := dbSTxVouts[it]
-		dbtx.VoutDbIds = make([]uint64, len(vouts))
-		for iv, dbvout := range vouts {
-			dbtx.VoutDbIds[iv], err = dcrpg.InsertVout(db, dbvout)
+			dbtx.VoutDbIds, err = dcrpg.InsertVouts(db, dbSTxVouts[it])
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			// Store the tx PK ID in the block
+			dbBlock.STxDbIDs[it], err = dcrpg.InsertTx(db, dbtx)
 			if err != nil {
 				fmt.Println(err)
 			}
 		}
 
-		dbBlock.STxDbIDs[it], err = dcrpg.InsertTx(db, dbtx)
+		// Store the block now that it has all it's transaction PK IDs
+		blockDbID, err := dcrpg.InsertBlock(db, &dbBlock)
 		if err != nil {
 			fmt.Println(err)
+			return err
+		}
+		fmt.Println("New block DB ID is:", blockDbID)
+
+		err = dcrpg.InsertBlockPrevNext(db, blockDbID, dbBlock.Hash,
+			dbBlock.PreviousHash, "")
+		if err != nil {
+			fmt.Println(err)
+			return err
+		}
+
+		// Update last block in db with this block's hash as it's next
+		if lastBlockDbID > 0 {
+			err = dcrpg.UpdateBlockNext(db, uint64(lastBlockDbID), dbBlock.Hash)
+			if err != nil {
+				fmt.Println(err)
+				return err
+			}
+		}
+		lastBlockDbID = int64(blockDbID)
+
+		// update height, the end condition for the loop
+		if _, height, err = client.GetBestBlock(); err != nil {
+			return fmt.Errorf("GetBestBlock failed: %v", err)
 		}
 	}
-
-	id, err := dcrpg.InsertBlock(db, &dbBlock)
-	if err != nil {
-		fmt.Println(err)
-		return err
-	}
-	fmt.Println("New record ID is:", id)
 
 	return nil
 }
@@ -228,68 +291,4 @@ func main() {
 		os.Exit(1)
 	}
 	os.Exit(0)
-}
-
-func processTransactions(txs []*wire.MsgTx, blockHash *chainhash.Hash) ([]*dbtypes.Tx, [][]*dbtypes.Vout) {
-	dbTransactions := make([]*dbtypes.Tx, 0, len(txs))
-	dbTxVouts := make([][]*dbtypes.Vout, len(txs))
-
-	for txIndex, tx := range txs {
-		dbTx := &dbtypes.Tx{
-			BlockHash:  blockHash.String(),
-			BlockIndex: uint32(txIndex),
-			TxID:       tx.TxHash().String(),
-			Version:    tx.Version,
-			Locktime:   tx.LockTime,
-			Expiry:     tx.Expiry,
-			NumVin:     uint32(len(tx.TxIn)),
-			NumVout:    uint32(len(tx.TxOut)),
-		}
-
-		dbTx.Vin = make([]dbtypes.VinTxProperty, 0, dbTx.NumVin)
-		for _, txin := range tx.TxIn {
-			dbTx.Vin = append(dbTx.Vin, dbtypes.VinTxProperty{
-				PrevTxHash:  txin.PreviousOutPoint.Hash.String(),
-				PrevTxIndex: txin.PreviousOutPoint.Index,
-				PrevTxTree:  uint16(txin.PreviousOutPoint.Tree),
-				Sequence:    txin.Sequence,
-				ValueIn:     uint64(txin.ValueIn),
-				BlockHeight: txin.BlockHeight,
-				BlockIndex:  txin.BlockIndex,
-				ScriptHex:   txin.SignatureScript,
-			})
-		}
-
-		// Vouts and their db IDs
-		dbTxVouts[txIndex] = make([]*dbtypes.Vout, 0, len(tx.TxOut))
-		for io, txout := range tx.TxOut {
-			outpoint := dbTx.TxID + ":" + strconv.Itoa(io)
-			vout := dbtypes.Vout{
-				Outpoint:     outpoint,
-				Value:        uint64(txout.Value),
-				Ind:          uint32(io),
-				Version:      txout.Version,
-				ScriptPubKey: txout.PkScript,
-			}
-			scriptClass, scriptAddrs, reqSigs, err := txscript.ExtractPkScriptAddrs(
-				vout.Version, vout.ScriptPubKey, activeChain)
-			if err != nil {
-				fmt.Println(err)
-			}
-			addys := make([]string, 0, len(scriptAddrs))
-			for ia := range scriptAddrs {
-				addys = append(addys, scriptAddrs[ia].String())
-			}
-			vout.ScriptPubKeyData.ReqSigs = uint32(reqSigs)
-			vout.ScriptPubKeyData.Type = scriptClass.String()
-			vout.ScriptPubKeyData.Addresses = addys
-			dbTxVouts[txIndex] = append(dbTxVouts[txIndex], &vout)
-		}
-
-		dbTx.VoutDbIds = make([]uint64, len(dbTxVouts[txIndex]))
-
-		dbTransactions = append(dbTransactions, dbTx)
-	}
-
-	return dbTransactions, dbTxVouts
 }

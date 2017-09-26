@@ -24,8 +24,8 @@ const (
 			$9, %s) RETURNING id;`
 
 	insertVoutRow = `INSERT INTO vouts (outpoint, value, ind, version,
-		pkscript, script_req_sigs, script_type, script_addresses)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, %s) RETURNING id;`
+			pkscript, script_req_sigs, script_type, script_addresses)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, %s) RETURNING id;`
 
 	CreateBlockTable = `CREATE TABLE blocks (  
 		id SERIAL PRIMARY KEY,
@@ -96,6 +96,13 @@ const (
 		script_req_sigs INT4,
 		script_type TEXT,
 		script_addresses TEXT[]
+	);`
+
+	CreateBlockPrevNextTable = `CREATE TABLE block_chain (
+		block_db_id INT8 PRIMARY KEY,
+		prev_hash TEXT UNIQUE NOT NULL,
+		this_hash TEXT UNIQUE NOT NULL,
+		next_hash TEXT
 	);`
 )
 
