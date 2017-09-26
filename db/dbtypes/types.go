@@ -8,16 +8,16 @@ import (
 
 // JSONB is used to implement the sql.Scanner and driver.Valuer interfaces
 // requried for the type to make a postgresql compatible JSONB type.
-type JSONB map[string]interface{}
+//type JSONB map[string]interface{}
 
 // Value satisfies driver.Valuer
-func (p JSONB) Value() (driver.Value, error) {
+func (p VinTxPropertyARRAY) Value() (driver.Value, error) {
 	j, err := json.Marshal(p)
 	return j, err
 }
 
 // Scan satisfies sql.Scanner
-func (p *JSONB) Scan(src interface{}) error {
+func (p *VinTxPropertyARRAY) Scan(src interface{}) error {
 	source, ok := src.([]byte)
 	if !ok {
 		return fmt.Errorf("Scan type assertion .([]byte) failed.")
@@ -30,18 +30,39 @@ func (p *JSONB) Scan(src interface{}) error {
 	}
 
 	// Set this JSONB
-	*p, ok = i.(map[string]interface{})
+	*p, ok = i.(VinTxPropertyARRAY) // (map[string]interface{})
 	if !ok {
-		return fmt.Errorf("Type assertion .(map[string]interface{}) failed.")
+		return fmt.Errorf("Type assertion .(VinTxProperty) failed.")
 	}
 
 	return nil
 }
 
+type VinTxPropertyARRAY []VinTxProperty
+
+// func VinTxPropertyToJSONB(vin *VinTxProperty) (JSONB, error) {
+// 	var vinJSONB map[string]interface{}
+// 	vinJSON, err := json.Marshal(vin)
+// 	if err != nil {
+// 		return vinJSONB, err
+
+// 	}
+
+// 	var vinInterface interface{}
+// 	err = json.Unmarshal(vinJSON, &vinInterface)
+// 	if err != nil {
+// 		return vinJSONB, err
+
+// 	}
+// 	vinJSONB = vinInterface.(map[string]interface{})
+// 	return vinJSONB, nil
+// }
+
 // Vout defines a transaction output
 type Vout struct {
 	// txDbID           int64
-	Value            int64            `json:"value"`
+	Outpoint         string           `json:"outpoint"`
+	Value            uint64           `json:"value"`
 	Ind              uint32           `json:"ind"`
 	Version          uint16           `json:"version"`
 	ScriptPubKey     []byte           `json:"pkScriptHex"`
@@ -60,7 +81,7 @@ type VinTxProperty struct {
 	PrevTxIndex uint32 `json:"prevvoutidx"`
 	PrevTxTree  uint16 `json:"tree"`
 	Sequence    uint32 `json:"sequence"`
-	ValueIn     int64  `json:"amountin"`
+	ValueIn     uint64 `json:"amountin"`
 	BlockHeight uint32 `json:"blockheight"`
 	BlockIndex  uint32 `json:"blockindex"`
 	ScriptHex   []byte `json:"scripthex"`
@@ -87,7 +108,7 @@ type ScriptSig struct {
 }
 
 type Tx struct {
-	blockDbID  int64
+	//blockDbID  int64
 	BlockHash  string
 	BlockIndex uint32
 	TxID       string          `json:"txid"`
@@ -96,7 +117,8 @@ type Tx struct {
 	Expiry     uint32          `json:"expiry"`
 	NumVin     uint32          `json:"numvin"`
 	Vin        []VinTxProperty `json:"vin"`
-	VoutDbIds  []int64
+	NumVout    uint32          `json:"numvout"`
+	VoutDbIds  []uint64
 	// NOTE: VoutDbIds may not be needed if there is a vout table since each
 	// vout will have a tx_dbid
 }
@@ -109,24 +131,25 @@ type Block struct {
 	MerkleRoot   string `json:"merkleroot"`
 	StakeRoot    string `json:"stakeroot"`
 	NumTx        uint32
-	TxDbIDs      []int64
 	NumRegTx     uint32
 	Tx           []string `json:"tx"`
+	TxDbIDs      []uint64
 	NumStakeTx   uint32
 	STx          []string `json:"stx"`
-	Time         uint32   `json:"time"`
-	Nonce        uint32   `json:"nonce"`
-	VoteBits     uint16   `json:"votebits"`
-	FinalState   [6]byte  `json:"finalstate"`
-	Voters       uint16   `json:"voters"`
-	FreshStake   uint8    `json:"freshstake"`
-	Revocations  uint8    `json:"revocations"`
-	PoolSize     uint32   `json:"poolsize"`
-	Bits         uint32   `json:"bits"`
-	SBits        int64    `json:"sbits"`
-	Difficulty   float64  `json:"difficulty"`
-	ExtraData    [32]byte `json:"extradata"`
-	StakeVersion uint32   `json:"stakeversion"`
-	PreviousHash string   `json:"previousblockhash"`
+	STxDbIDs     []uint64
+	Time         uint64  `json:"time"`
+	Nonce        uint64  `json:"nonce"`
+	VoteBits     uint16  `json:"votebits"`
+	FinalState   []byte  `json:"finalstate"`
+	Voters       uint16  `json:"voters"`
+	FreshStake   uint8   `json:"freshstake"`
+	Revocations  uint8   `json:"revocations"`
+	PoolSize     uint32  `json:"poolsize"`
+	Bits         uint32  `json:"bits"`
+	SBits        uint64  `json:"sbits"`
+	Difficulty   float64 `json:"difficulty"`
+	ExtraData    []byte  `json:"extradata"`
+	StakeVersion uint32  `json:"stakeversion"`
+	PreviousHash string  `json:"previousblockhash"`
 	//NextHash     string   `json:"nextblockhash"`
 }

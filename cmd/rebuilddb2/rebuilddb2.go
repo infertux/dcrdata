@@ -6,13 +6,16 @@ import (
 	"os"
 	"os/signal"
 	"runtime/pprof"
+	"strconv"
 
 	"github.com/btcsuite/btclog"
 	"github.com/dcrdata/dcrdata/db/dbtypes"
 	"github.com/dcrdata/dcrdata/db/dcrpg"
 	"github.com/dcrdata/dcrdata/rpcutils"
 	"github.com/dcrdata/dcrdata/txhelpers"
+	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/txscript"
+	"github.com/decred/dcrd/wire"
 	"github.com/decred/dcrrpcclient"
 )
 
@@ -153,27 +156,85 @@ func mainCore() error {
 		Tx:           txHashStrs,
 		NumStakeTx:   uint32(len(msgBlock.STransactions)),
 		STx:          stxHashStrs,
-		Time:         uint32(blockHeader.Timestamp.Unix()),
-		Nonce:        blockHeader.Nonce,
+		Time:         uint64(blockHeader.Timestamp.Unix()),
+		Nonce:        uint64(blockHeader.Nonce),
 		VoteBits:     blockHeader.VoteBits,
-		FinalState:   blockHeader.FinalState,
+		FinalState:   blockHeader.FinalState[:],
 		Voters:       blockHeader.Voters,
 		FreshStake:   blockHeader.FreshStake,
 		Revocations:  blockHeader.Revocations,
 		PoolSize:     blockHeader.PoolSize,
 		Bits:         blockHeader.Bits,
-		SBits:        blockHeader.SBits,
+		SBits:        uint64(blockHeader.SBits),
 		Difficulty:   txhelpers.GetDifficultyRatio(blockHeader.Bits, activeChain),
-		ExtraData:    blockHeader.ExtraData,
+		ExtraData:    blockHeader.ExtraData[:],
 		StakeVersion: blockHeader.StakeVersion,
 		PreviousHash: blockHeader.PrevBlock.String(),
 	}
 
-	dbTransactions := make([]*dbtypes.Tx, 0, dbBlock.NumTx)
-	dbTxVouts := make([][]*dbtypes.Vout, dbBlock.NumTx)
+	// regular transactions
+	dbTransactions, dbTxVouts := processTransactions(msgBlock.Transactions, blockHash)
 
-	// txTree := wire.TxTreeStake
-	for txIndex, tx := range msgBlock.Transactions {
+	dbBlock.TxDbIDs = make([]uint64, len(dbTransactions))
+	for it, dbtx := range dbTransactions {
+		vouts := dbTxVouts[it]
+		dbtx.VoutDbIds = make([]uint64, len(vouts))
+		for iv, dbvout := range vouts {
+			dbtx.VoutDbIds[iv], err = dcrpg.InsertVout(db, dbvout)
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+
+		dbBlock.TxDbIDs[it], err = dcrpg.InsertTx(db, dbtx)
+		if err != nil {
+			fmt.Println(err)
+		}
+	}
+
+	// stake transactions, txTree := wire.TxTreeStake
+	dbSTransactions, dbSTxVouts := processTransactions(msgBlock.STransactions, blockHash)
+
+	dbBlock.STxDbIDs = make([]uint64, len(dbSTransactions))
+	for it, dbtx := range dbSTransactions {
+		vouts := dbSTxVouts[it]
+		dbtx.VoutDbIds = make([]uint64, len(vouts))
+		for iv, dbvout := range vouts {
+			dbtx.VoutDbIds[iv], err = dcrpg.InsertVout(db, dbvout)
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+
+		dbBlock.STxDbIDs[it], err = dcrpg.InsertTx(db, dbtx)
+		if err != nil {
+			fmt.Println(err)
+		}
+	}
+
+	id, err := dcrpg.InsertBlock(db, &dbBlock)
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+	fmt.Println("New record ID is:", id)
+
+	return nil
+}
+
+func main() {
+	if err := mainCore(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	os.Exit(0)
+}
+
+func processTransactions(txs []*wire.MsgTx, blockHash *chainhash.Hash) ([]*dbtypes.Tx, [][]*dbtypes.Vout) {
+	dbTransactions := make([]*dbtypes.Tx, 0, len(txs))
+	dbTxVouts := make([][]*dbtypes.Vout, len(txs))
+
+	for txIndex, tx := range txs {
 		dbTx := &dbtypes.Tx{
 			BlockHash:  blockHash.String(),
 			BlockIndex: uint32(txIndex),
@@ -182,6 +243,7 @@ func mainCore() error {
 			Locktime:   tx.LockTime,
 			Expiry:     tx.Expiry,
 			NumVin:     uint32(len(tx.TxIn)),
+			NumVout:    uint32(len(tx.TxOut)),
 		}
 
 		dbTx.Vin = make([]dbtypes.VinTxProperty, 0, dbTx.NumVin)
@@ -191,18 +253,20 @@ func mainCore() error {
 				PrevTxIndex: txin.PreviousOutPoint.Index,
 				PrevTxTree:  uint16(txin.PreviousOutPoint.Tree),
 				Sequence:    txin.Sequence,
-				ValueIn:     txin.ValueIn,
+				ValueIn:     uint64(txin.ValueIn),
 				BlockHeight: txin.BlockHeight,
 				BlockIndex:  txin.BlockIndex,
 				ScriptHex:   txin.SignatureScript,
 			})
 		}
 
-		// Vouts
+		// Vouts and their db IDs
 		dbTxVouts[txIndex] = make([]*dbtypes.Vout, 0, len(tx.TxOut))
 		for io, txout := range tx.TxOut {
+			outpoint := dbTx.TxID + ":" + strconv.Itoa(io)
 			vout := dbtypes.Vout{
-				Value:        txout.Value,
+				Outpoint:     outpoint,
+				Value:        uint64(txout.Value),
 				Ind:          uint32(io),
 				Version:      txout.Version,
 				ScriptPubKey: txout.PkScript,
@@ -222,38 +286,10 @@ func mainCore() error {
 			dbTxVouts[txIndex] = append(dbTxVouts[txIndex], &vout)
 		}
 
-		voutIDs := make([]int64, len(dbTxVouts))
-		for io, vout := range dbTxVouts[txIndex] {
-			// write vout to DB and record PK (db entry id)
-			voutIDs[io] = int64(io) // CHANGE!
-			fmt.Println(*vout)
-		}
-
-		dbTx.VoutDbIds = voutIDs
+		dbTx.VoutDbIds = make([]uint64, len(dbTxVouts[txIndex]))
 
 		dbTransactions = append(dbTransactions, dbTx)
 	}
 
-	dbBlock.TxDbIDs = make([]int64, len(dbTransactions))
-	for it, dbtx := range dbTransactions {
-		// write tx to DB and record PK
-		dbBlock.TxDbIDs[it] = int64(it) // CHANGE!
-		fmt.Println(dbtx)
-	}
-
-	fmt.Println(dbBlock)
-
-	// waitSync.Wait()
-
-	log.Print("Done!")
-
-	return nil
-}
-
-func main() {
-	if err := mainCore(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-	os.Exit(0)
+	return dbTransactions, dbTxVouts
 }

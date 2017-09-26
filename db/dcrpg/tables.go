@@ -27,13 +27,14 @@ const (
 		merkle_root TEXT,
 		stake_root TEXT,
 		numtx INT4,
-		txDbIDs INT8[],
 		num_rtx INT4,
 		tx TEXT[],
+		txDbIDs INT8[],
 		num_stx INT4,
 		stx TEXT[],
+		stxDbIDs INT8[],
 		time INT8,
-		nonce INT4,
+		nonce INT8,
 		vote_bits INT2,
 		final_state BYTEA,
 		voters INT2,
@@ -62,29 +63,30 @@ const (
 
 	createTransactionTable = `CREATE TABLE transactions (
 		id SERIAL8 PRIMARY KEY,
-		block_db_id INT4,
+		/*block_db_id INT4,*/
 		block_hash TEXT,
 		block_index INT4,
-		tx_hash TEXT,
+		tx_hash TEXT UNIQUE,
 		version INT4,
 		lock_time INT4,
 		expiry INT4,
 		num_vin INT4,
-		vins JSONB[],
+		vins JSONB,
 		num_vout INT4,
 		vout_db_ids INT8[]
 	);`
 
 	createVoutTable = `CREATE TABLE vouts (
 		id SERIAL8 PRIMARY KEY,
-		tx_db_id INT8,
+		/* tx_db_id INT8, */
+		outpoint TEXT UNIQUE,
 		value INT8,
 		ind INT4,
 		version INT2,
 		pkscript BYTEA,
 		script_req_sigs INT4,
 		script_type TEXT,
-		script_addresses TEXT[],
+		script_addresses TEXT[]
 	);`
 )
 
