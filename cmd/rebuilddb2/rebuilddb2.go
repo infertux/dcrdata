@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/pprof"
+	"time"
 
 	"github.com/btcsuite/btclog"
 	"github.com/dcrdata/dcrdata/db/dbtypes"
@@ -20,6 +21,10 @@ var (
 	backendLog      *btclog.Backend
 	rpcclientLogger btclog.Logger
 	sqliteLogger    btclog.Logger
+)
+
+const (
+	rescanLogBlockChunk = 250
 )
 
 func init() {
@@ -126,14 +131,49 @@ func mainCore() error {
 	// }
 	//prev_hash := genesisHash.String()
 
+	var totalTxs, totalRTxs, totalSTxs, totalVouts int64
+	var lastTxs, lastVouts int64
+	tickTime := 2 * time.Second
+	ticker := time.NewTicker(tickTime)
+	startTime := time.Now()
+
+	defer func() {
+		ticker.Stop()
+		totalElapsed := time.Since(startTime).Seconds()
+		totalVoutPerSec := totalVouts / int64(totalElapsed)
+		totalTxPerSec := totalTxs / int64(totalElapsed)
+		log.Infof("Avg. speed: %d tx/s, %d vout/s", totalTxPerSec, totalVoutPerSec)
+	}()
+
 	lastBlockDbID := int64(-1)
 
-	for ib := int64(0); ib <= height; ib++ {
+	startHeight := int64(0)
+	for ib := startHeight; ib <= height; ib++ {
 		// check for quit signal
 		select {
 		case <-quit:
 			log.Infof("Rescan cancelled at height %d.", ib)
 			return nil
+		default:
+		}
+
+		if (ib-1)%rescanLogBlockChunk == 0 || ib == startHeight {
+			if ib == 0 {
+				log.Infof("Scanning genesis block.")
+			} else {
+				endRangeBlock := rescanLogBlockChunk * (1 + (ib-1)/rescanLogBlockChunk)
+				if endRangeBlock > height {
+					endRangeBlock = height
+				}
+				log.Infof("Scanning blocks %d to %d...", ib, endRangeBlock)
+			}
+		}
+		select {
+		case <-ticker.C:
+			txPerSec := float64(totalTxs-lastTxs) / tickTime.Seconds()
+			voutPerSec := float64(totalVouts-lastVouts) / tickTime.Seconds()
+			log.Infof("(%5d tx/s,%5d vout/s)", int64(txPerSec), int64(voutPerSec))
+			lastTxs, lastVouts = totalTxs, totalVouts
 		default:
 		}
 
@@ -213,15 +253,18 @@ func mainCore() error {
 
 			dbtx.VoutDbIds, err = dcrpg.InsertVouts(db, dbTxVouts[it])
 			if err != nil {
-				fmt.Println(err)
+				log.Error(err)
 			}
+			totalVouts += int64(len(dbtx.VoutDbIds))
 
 			// Store the tx PK ID in the block
 			dbBlock.TxDbIDs[it], err = dcrpg.InsertTx(db, dbtx)
 			if err != nil {
-				fmt.Println(err)
+				log.Error(err)
 			}
 		}
+		totalTxs += int64(len(dbTransactions))
+		totalRTxs += int64(len(dbTransactions))
 
 		// stake transactions
 		dbSTransactions, dbSTxVouts := dbtypes.ExtractBlockTransactions(msgBlock,
@@ -241,28 +284,30 @@ func mainCore() error {
 
 			dbtx.VoutDbIds, err = dcrpg.InsertVouts(db, dbSTxVouts[it])
 			if err != nil {
-				fmt.Println(err)
+				log.Error(err)
 			}
+			totalVouts += int64(len(dbtx.VoutDbIds))
 
 			// Store the tx PK ID in the block
 			dbBlock.STxDbIDs[it], err = dcrpg.InsertTx(db, dbtx)
 			if err != nil {
-				fmt.Println(err)
+				log.Error(err)
 			}
 		}
+		totalTxs += int64(len(dbSTransactions))
+		totalSTxs += int64(len(dbSTransactions))
 
 		// Store the block now that it has all it's transaction PK IDs
 		blockDbID, err := dcrpg.InsertBlock(db, &dbBlock)
 		if err != nil {
-			fmt.Println(err)
+			log.Error(err)
 			return err
 		}
-		fmt.Println("New block DB ID is:", blockDbID)
 
 		err = dcrpg.InsertBlockPrevNext(db, blockDbID, dbBlock.Hash,
 			dbBlock.PreviousHash, "")
 		if err != nil {
-			fmt.Println(err)
+			log.Error(err)
 			return err
 		}
 
@@ -287,7 +332,7 @@ func mainCore() error {
 
 func main() {
 	if err := mainCore(); err != nil {
-		fmt.Println(err)
+		log.Error(err)
 		os.Exit(1)
 	}
 	os.Exit(0)

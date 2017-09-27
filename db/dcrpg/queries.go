@@ -61,10 +61,10 @@ func InsertVouts(db *sql.DB, dbVouts []*dbtypes.Vout) ([]uint64, error) {
 		return nil, fmt.Errorf("Unable to begin database transaction: %v", err)
 	}
 
-	if _, err = dbtx.Exec("SET LOCAL synchronous_commit TO OFF;"); err != nil {
-		dbtx.Rollback()
-		return nil, err
-	}
+	// if _, err = dbtx.Exec("SET LOCAL synchronous_commit TO OFF;"); err != nil {
+	// 	dbtx.Rollback()
+	// 	return nil, err
+	// }
 
 	ids := make([]uint64, len(dbVouts))
 	for i, vout := range dbVouts {

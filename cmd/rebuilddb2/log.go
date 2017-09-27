@@ -38,7 +38,7 @@ func InitLogger() error {
 	log.Level = logrus.DebugLevel
 	log.Formatter = &prefix_fmt.TextFormatter{
 		ForceColors:     true,
-		TimestampFormat: "02 Jan 06 15:04.00 -0700",
+		TimestampFormat: "02 Jan 06 15:04:05.00 -0700",
 	}
 
 	//log.Out = colorable.NewColorableStdout()
