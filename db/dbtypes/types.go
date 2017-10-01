@@ -61,9 +61,10 @@ type VinTxPropertyARRAY []VinTxProperty
 // Vout defines a transaction output
 type Vout struct {
 	// txDbID           int64
-	Outpoint         string           `json:"outpoint"`
-	Value            uint64           `json:"value"`
+	Outpoint string `json:"outpoint"`
+	//TxHash           string           `json:"tx_hash"`
 	Ind              uint32           `json:"ind"`
+	Value            uint64           `json:"value"`
 	Version          uint16           `json:"version"`
 	ScriptPubKey     []byte           `json:"pkScriptHex"`
 	ScriptPubKeyData ScriptPubKeyData `json:"pkScript"`
@@ -77,6 +78,7 @@ type ScriptPubKeyData struct {
 }
 
 type VinTxProperty struct {
+	PrevOut     string `json:"prevout"`
 	PrevTxHash  string `json:"prevtxhash"`
 	PrevTxIndex uint32 `json:"prevvoutidx"`
 	PrevTxTree  uint16 `json:"tree"`

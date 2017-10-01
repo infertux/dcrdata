@@ -7,8 +7,9 @@ import (
 
 const (
 	insertBlockPrevNext = `INSERT INTO block_chain (
-		block_db_id, prev_hash, this_hash, next_hash
-	) VALUES ($1, $2, $3, $4)`
+		block_db_id, prev_hash, this_hash, next_hash)
+	VALUES ($1, $2, $3, $4)
+	ON CONFLICT (this_hash) DO NOTHING;`
 
 	updateBlockNext = `UPDATE block_chain set next_hash = $2 WHERE block_db_id = $1;`
 )

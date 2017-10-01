@@ -48,6 +48,7 @@ func processTransactions(txs []*wire.MsgTx, blockHash chainhash.Hash,
 		dbTx.Vin = make([]VinTxProperty, 0, dbTx.NumVin)
 		for _, txin := range tx.TxIn {
 			dbTx.Vin = append(dbTx.Vin, VinTxProperty{
+				PrevOut:     txin.PreviousOutPoint.String(),
 				PrevTxHash:  txin.PreviousOutPoint.Hash.String(),
 				PrevTxIndex: txin.PreviousOutPoint.Index,
 				PrevTxTree:  uint16(txin.PreviousOutPoint.Tree),
