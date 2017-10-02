@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/pprof"
+	"strings"
 	"time"
 
 	"github.com/btcsuite/btclog"
@@ -76,10 +77,13 @@ func mainCore() error {
 	}
 	log.Info("Node connection count: ", infoResult.Connections)
 
-	host, port, err := net.SplitHostPort(cfg.DBHostPort)
-	if err != nil {
-		log.Errorf("SplitHostPort failed: %v", err)
-		return err
+	host, port := cfg.DBHostPort, ""
+	if !strings.HasPrefix(host, "/") {
+		host, port, err = net.SplitHostPort(cfg.DBHostPort)
+		if err != nil {
+			log.Errorf("SplitHostPort failed: %v", err)
+			return err
+		}
 	}
 
 	db, err := dcrpg.Connect(host, port, cfg.DBUser, cfg.DBPass, cfg.DBName)
@@ -166,9 +170,9 @@ func mainCore() error {
 	lastBlock := int64(bestHeight)
 	blocksToSync := height - lastBlock
 	reindexing := blocksToSync > height/2
-	var dupChecks bool
+	dupChecks := true
 	if reindexing {
-		dupChecks = true
+		dupChecks = false
 		if err = dcrpg.DeindexBlockTableOnHash(db); err != nil {
 			log.Warnln(err)
 		}
