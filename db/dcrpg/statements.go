@@ -14,15 +14,15 @@ const (
 	updateBlockNext = `UPDATE block_chain set next_hash = $2 WHERE block_db_id = $1;`
 )
 
-func MakeBlockInsertStatement(block *dbtypes.Block) string {
+func MakeBlockInsertStatement(block *dbtypes.Block, checked bool) string {
 	return internal.MakeBlockInsertStatement(block.TxDbIDs, block.STxDbIDs,
-		block.Tx, block.STx)
+		block.Tx, block.STx, checked)
 }
 
-func MakeVoutInsertStatement(vout *dbtypes.Vout) string {
-	return internal.MakeVoutInsertStatement(vout.ScriptPubKeyData.Addresses)
+func MakeVoutInsertStatement(vout *dbtypes.Vout, checked bool) string {
+	return internal.MakeVoutInsertStatement(vout.ScriptPubKeyData.Addresses, checked)
 }
 
-func MakeTxInsertStatement(tx *dbtypes.Tx) string {
-	return internal.MakeTxInsertStatement(tx.VoutDbIds)
+func MakeTxInsertStatement(tx *dbtypes.Tx, checked bool) string {
+	return internal.MakeTxInsertStatement(tx.VoutDbIds, tx.VinDbIds, checked)
 }

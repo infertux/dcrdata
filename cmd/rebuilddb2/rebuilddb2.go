@@ -133,16 +133,16 @@ func mainCore() error {
 	// }
 	//prev_hash := genesisHash.String()
 
-	var totalTxs, totalRTxs, totalSTxs, totalVouts int64
-	var lastBlocks, lastTxs, lastVouts int64
-	tickTime := time.Second
+	var totalTxs, totalRTxs, totalSTxs, totalVins, totalVouts int64
+	var lastTxs, lastVins, lastVouts int64
+	tickTime := 5 * time.Second
 	ticker := time.NewTicker(tickTime)
 	startTime := time.Now()
 
+	skipErrReport := new(bool)
 	defer func() {
-		ticker.Stop()
 		totalElapsed := time.Since(startTime).Seconds()
-		if int64(totalElapsed) == 0 {
+		if *skipErrReport || int64(totalElapsed) == 0 {
 			return
 		}
 		totalVoutPerSec := totalVouts / int64(totalElapsed)
@@ -152,7 +152,41 @@ func mainCore() error {
 
 	lastBlockDbID := int64(-1)
 
-	startHeight := int64(0)
+	bestHeight, _, _, err := dcrpg.RetrieveBestBlockHeight(db)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Info("blocks table is empty, starting fresh.")
+		} else {
+			log.Errorln("RetrieveBestBlockHeight:", err)
+			return err
+		}
+	}
+
+	// Remove indexes/constraints before bulk import
+	lastBlock := int64(bestHeight)
+	blocksToSync := height - lastBlock
+	reindexing := blocksToSync > height/2
+	var dupChecks bool
+	if reindexing {
+		dupChecks = true
+		if err = dcrpg.DeindexBlockTableOnHash(db); err != nil {
+			log.Warnln(err)
+		}
+		if err = dcrpg.DeindexTransactionTableOnHashes(db); err != nil {
+			log.Warnln(err)
+		}
+		if err = dcrpg.DeindexTransactionTableOnBlockIn(db); err != nil {
+			log.Warnln(err)
+		}
+		if err = dcrpg.DeindexVinTableOnVins(db); err != nil {
+			log.Warnln(err)
+		}
+		if err = dcrpg.DeindexVinTableOnPrevOuts(db); err != nil {
+			log.Warnln(err)
+		}
+	}
+
+	startHeight := lastBlock + 1
 	for ib := startHeight; ib <= height; ib++ {
 		// check for quit signal
 		select {
@@ -175,12 +209,14 @@ func mainCore() error {
 		}
 		select {
 		case <-ticker.C:
-			blocksPerSec := float64(ib-lastBlocks) / tickTime.Seconds()
+			blocksPerSec := float64(ib-lastBlock) / tickTime.Seconds()
 			txPerSec := float64(totalTxs-lastTxs) / tickTime.Seconds()
+			vinsPerSec := float64(totalVins-lastVins) / tickTime.Seconds()
 			voutPerSec := float64(totalVouts-lastVouts) / tickTime.Seconds()
-			log.Infof("(%3d blk/s,%5d tx/s,%5d vout/s)",
-				int64(blocksPerSec), int64(txPerSec), int64(voutPerSec))
-			lastBlocks, lastTxs, lastVouts = ib, totalTxs, totalVouts
+			log.Infof("(%3d blk/s,%5d tx/s,%5d vin/sec,%5d vout/s)", int64(blocksPerSec),
+				int64(txPerSec), int64(vinsPerSec), int64(voutPerSec))
+			lastBlock, lastTxs = ib, totalTxs
+			lastVins, lastVouts = totalVins, totalVouts
 		default:
 		}
 
@@ -236,10 +272,6 @@ func mainCore() error {
 			PreviousHash: blockHeader.PrevBlock.String(),
 		}
 
-		totalTxs += int64(dbBlock.NumTx)
-		totalRTxs += int64(dbBlock.NumRegTx)
-		totalSTxs += int64(dbBlock.NumStakeTx)
-
 		// Extract transactions and their vouts. Insert vouts into their pg table,
 		// returning their PK IDs, which are stored in the corresponding transaction
 		// data struct. Insert each transaction once they are updated with their
@@ -249,63 +281,78 @@ func mainCore() error {
 		// regular transactions
 		dbTransactions, dbTxVouts := dbtypes.ExtractBlockTransactions(msgBlock,
 			wire.TxTreeRegular, activeChain)
-		for it := range dbTransactions {
-			totalVouts += int64(len(dbTxVouts[it]))
+
+		dbBlock.TxDbIDs = make([]uint64, len(dbTransactions))
+		for it, dbtx := range dbTransactions {
+			dbtx.VoutDbIds, err = dcrpg.InsertVouts(db, dbTxVouts[it], dupChecks)
+			if err != nil && err != sql.ErrNoRows {
+				log.Errorln("InsertVouts:", err)
+				return err
+			}
+			if err == sql.ErrNoRows || len(dbTxVouts[it]) != len(dbtx.VoutDbIds) {
+				log.Warnf("Incomplete Vout insert.")
+				continue
+			}
+			totalVouts += int64(len(dbtx.VoutDbIds))
+
+			dbtx.VinDbIds, err = dcrpg.InsertVins(db, dbtx.Vins)
+			if err != nil && err != sql.ErrNoRows {
+				log.Errorln("InsertVins:", err)
+				return err
+			}
+			totalVins += int64(len(dbtx.VinDbIds))
+
+			// Store the tx PK ID in the block
+			dbBlock.TxDbIDs[it], err = dcrpg.InsertTx(db, dbtx, dupChecks)
+			if err != nil && err != sql.ErrNoRows {
+				log.Errorln("InsertTx:", err)
+				return err
+			}
 		}
+
+		totalTxs += int64(dbBlock.NumRegTx)
+		totalRTxs += int64(dbBlock.NumRegTx)
 
 		// stake transactions
 		dbSTransactions, dbSTxVouts := dbtypes.ExtractBlockTransactions(msgBlock,
 			wire.TxTreeStake, activeChain)
-		for it := range dbSTransactions {
-			totalVouts += int64(len(dbSTxVouts[it]))
-		}
 
-		// regular
-		dbBlock.TxDbIDs = make([]uint64, len(dbTransactions))
-		for it, dbtx := range dbTransactions {
-			expectedNumVouts := len(dbTxVouts[it])
-
-			dbtx.VoutDbIds, err = dcrpg.InsertVouts(db, dbTxVouts[it])
-			if err != nil && err != sql.ErrNoRows {
-				log.Errorln("InsertVouts:", err)
-				return err
-			}
-			if err == sql.ErrNoRows || expectedNumVouts != len(dbtx.VoutDbIds) {
-				continue
-			}
-
-			// Store the tx PK ID in the block
-			dbBlock.TxDbIDs[it], err = dcrpg.InsertTx(db, dbtx)
-			if err != nil && err != sql.ErrNoRows {
-				log.Errorln("InsertTx:", err)
-			}
-		}
-
-		// stake
 		dbBlock.STxDbIDs = make([]uint64, len(dbSTransactions))
 		for it, dbtx := range dbSTransactions {
-			expectedNumVouts := len(dbSTxVouts[it])
-
-			dbtx.VoutDbIds, err = dcrpg.InsertVouts(db, dbSTxVouts[it])
+			dbtx.VoutDbIds, err = dcrpg.InsertVouts(db, dbSTxVouts[it], dupChecks)
 			if err != nil && err != sql.ErrNoRows {
 				log.Errorln("InsertVouts:", err)
 				return err
 			}
-			if err == sql.ErrNoRows || expectedNumVouts != len(dbtx.VoutDbIds) {
+			if err == sql.ErrNoRows || len(dbSTxVouts[it]) != len(dbtx.VoutDbIds) {
+				log.Warnf("Incomplete Vout insert.")
 				continue
 			}
+			totalVouts += int64(len(dbtx.VoutDbIds))
+
+			dbtx.VinDbIds, err = dcrpg.InsertVins(db, dbtx.Vins)
+			if err != nil && err != sql.ErrNoRows {
+				log.Errorln("InsertVins:", err)
+				return err
+			}
+			totalVins += int64(len(dbtx.VinDbIds))
 
 			// Store the tx PK ID in the block
-			dbBlock.STxDbIDs[it], err = dcrpg.InsertTx(db, dbtx)
+			dbBlock.STxDbIDs[it], err = dcrpg.InsertTx(db, dbtx, dupChecks)
 			if err != nil && err != sql.ErrNoRows {
 				log.Errorln("InsertTx:", err)
+				return err
 			}
 		}
 
+		totalTxs += int64(dbBlock.NumStakeTx)
+		totalSTxs += int64(dbBlock.NumStakeTx)
+
 		// Store the block now that it has all it's transaction PK IDs
-		blockDbID, err := dcrpg.InsertBlock(db, &dbBlock)
+		blockDbID, err := dcrpg.InsertBlock(db, &dbBlock, dupChecks)
 		if err != nil {
 			if err == sql.ErrNoRows {
+				lastBlockDbID = -1
 				continue
 			}
 			log.Errorln("InsertBlock:", err)
@@ -335,14 +382,48 @@ func mainCore() error {
 		}
 	}
 
-	fmt.Printf("Rebuild finished: %d blocks, %d transactions, %d outs",
-		height, totalTxs, totalVouts)
+	ticker.Stop()
+	*skipErrReport = true
 
-	txDbIDs, txs, err := dcrpg.RetrieveSpendingTxs(db, "fa9acf7a4b1e9a52df1795f3e1c295613c9df44f5562de66595acc33b3831118")
+	if reindexing {
+		log.Infof("Indexing blocks table...")
+		if err = dcrpg.IndexBlockTableOnHash(db); err != nil {
+			return err
+		}
+		log.Infof("Indexing transactions table on tx/block hashes...")
+		if err = dcrpg.IndexTransactionTableOnHashes(db); err != nil {
+			return err
+		}
+		log.Infof("Indexing transactions table on block id/indx...")
+		if err = dcrpg.IndexTransactionTableOnBlockIn(db); err != nil {
+			return err
+		}
+		log.Infof("Indexing vins table on txin...")
+		if err = dcrpg.IndexVinTableOnVins(db); err != nil {
+			return err
+		}
+		log.Infof("Indexing vins table on prevouts...")
+		if err = dcrpg.IndexVinTableOnPrevOuts(db); err != nil {
+			return err
+		}
+	}
+
+	log.Infof("Rebuild finished: %d blocks, %d transactions, %d ins, %d outs",
+		height, totalTxs, totalVins, totalVouts)
+
+	spendingTxsDbIDs, spendingTxs, err := dcrpg.RetrieveSpendingTxsByFundingTx(db,
+		"fa9acf7a4b1e9a52df1795f3e1c295613c9df44f5562de66595acc33b3831118")
 	if err != nil {
 		return err
 	}
-	spew.Dump(txDbIDs, txs)
+	spew.Dump(spendingTxsDbIDs, spendingTxs)
+
+	spendingTxDbID, spendingTx, err := dcrpg.RetrieveSpendingTxByTxOut(db,
+		"fa9acf7a4b1e9a52df1795f3e1c295613c9df44f5562de66595acc33b3831118", uint32(1))
+	if err != nil {
+		return err
+	}
+	spew.Dump(spendingTxDbID, spendingTx)
 
 	return nil
 }

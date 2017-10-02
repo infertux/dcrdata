@@ -12,6 +12,7 @@ import (
 var createTableStatements = map[string]string{
 	"blocks":       internal.CreateBlockTable,
 	"transactions": internal.CreateTransactionTable,
+	"vins":         internal.CreateVinTable,
 	"vouts":        internal.CreateVoutTable,
 	"block_chain":  internal.CreateBlockPrevNextTable,
 }

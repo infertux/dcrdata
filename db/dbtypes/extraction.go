@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/dcrdata/dcrdata/txhelpers"
 	"github.com/decred/dcrd/chaincfg"
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/txscript"
@@ -34,9 +35,14 @@ func processTransactions(txs []*wire.MsgTx, blockHash chainhash.Hash,
 	dbTxVouts := make([][]*Vout, len(txs))
 
 	for txIndex, tx := range txs {
+		var tree int8
+		if txhelpers.IsStakeTx(tx) {
+			tree = wire.TxTreeStake
+		}
 		dbTx := &Tx{
 			BlockHash:  blockHash.String(),
 			BlockIndex: uint32(txIndex),
+			Tree:       tree,
 			TxID:       tx.TxHash().String(),
 			Version:    tx.Version,
 			Locktime:   tx.LockTime,
@@ -45,20 +51,24 @@ func processTransactions(txs []*wire.MsgTx, blockHash chainhash.Hash,
 			NumVout:    uint32(len(tx.TxOut)),
 		}
 
-		dbTx.Vin = make([]VinTxProperty, 0, dbTx.NumVin)
-		for _, txin := range tx.TxIn {
-			dbTx.Vin = append(dbTx.Vin, VinTxProperty{
+		dbTx.Vins = make([]VinTxProperty, 0, dbTx.NumVin)
+		for idx, txin := range tx.TxIn {
+			dbTx.Vins = append(dbTx.Vins, VinTxProperty{
 				PrevOut:     txin.PreviousOutPoint.String(),
 				PrevTxHash:  txin.PreviousOutPoint.Hash.String(),
 				PrevTxIndex: txin.PreviousOutPoint.Index,
 				PrevTxTree:  uint16(txin.PreviousOutPoint.Tree),
 				Sequence:    txin.Sequence,
 				ValueIn:     uint64(txin.ValueIn),
+				TxID:        dbTx.TxID,
+				TxIndex:     uint32(idx),
 				BlockHeight: txin.BlockHeight,
 				BlockIndex:  txin.BlockIndex,
 				ScriptHex:   txin.SignatureScript,
 			})
 		}
+
+		dbTx.VinDbIds = make([]uint64, int(dbTx.NumVin))
 
 		// Vouts and their db IDs
 		dbTxVouts[txIndex] = make([]*Vout, 0, len(tx.TxOut))

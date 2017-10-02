@@ -8,7 +8,7 @@ import (
 
 // JSONB is used to implement the sql.Scanner and driver.Valuer interfaces
 // requried for the type to make a postgresql compatible JSONB type.
-//type JSONB map[string]interface{}
+type JSONB map[string]interface{}
 
 // Value satisfies driver.Valuer
 func (p VinTxPropertyARRAY) Value() (driver.Value, error) {
@@ -30,10 +30,21 @@ func (p *VinTxPropertyARRAY) Scan(src interface{}) error {
 	}
 
 	// Set this JSONB
-	*p, ok = i.(VinTxPropertyARRAY) // (map[string]interface{})
+	is, ok := i.([]interface{})
 	if !ok {
-		return fmt.Errorf("Type assertion .(VinTxProperty) failed.")
+		return fmt.Errorf("Type assertion .([]interface{}) failed.")
 	}
+	numVin := len(is)
+	ba := make(VinTxPropertyARRAY, numVin)
+	for ii := range is {
+		VinTxPropertyMapIface, ok := is[ii].(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("Type assertion .(map[string]interface) failed.")
+		}
+		b, _ := json.Marshal(VinTxPropertyMapIface)
+		json.Unmarshal(b, &ba[ii])
+	}
+	*p = ba
 
 	return nil
 }
@@ -84,6 +95,8 @@ type VinTxProperty struct {
 	PrevTxTree  uint16 `json:"tree"`
 	Sequence    uint32 `json:"sequence"`
 	ValueIn     uint64 `json:"amountin"`
+	TxID        string `json:"tx_hash"`
+	TxIndex     uint32 `json:"tx_index"`
 	BlockHeight uint32 `json:"blockheight"`
 	BlockIndex  uint32 `json:"blockindex"`
 	ScriptHex   []byte `json:"scripthex"`
@@ -111,16 +124,18 @@ type ScriptSig struct {
 
 type Tx struct {
 	//blockDbID  int64
-	BlockHash  string
-	BlockIndex uint32
-	TxID       string          `json:"txid"`
-	Version    uint16          `json:"version"`
-	Locktime   uint32          `json:"locktime"`
-	Expiry     uint32          `json:"expiry"`
-	NumVin     uint32          `json:"numvin"`
-	Vin        []VinTxProperty `json:"vin"`
-	NumVout    uint32          `json:"numvout"`
-	VoutDbIds  []uint64
+	BlockHash  string             `json:"block_hash"`
+	BlockIndex uint32             `json:"block_index"`
+	Tree       int8               `json:"tree"`
+	TxID       string             `json:"txid"`
+	Version    uint16             `json:"version"`
+	Locktime   uint32             `json:"locktime"`
+	Expiry     uint32             `json:"expiry"`
+	NumVin     uint32             `json:"numvin"`
+	Vins       VinTxPropertyARRAY `json:"vin"`
+	VinDbIds   []uint64           `json:"vindbids"`
+	NumVout    uint32             `json:"numvout"`
+	VoutDbIds  []uint64           `json:"voutdbids"`
 	// NOTE: VoutDbIds may not be needed if there is a vout table since each
 	// vout will have a tx_dbid
 }
