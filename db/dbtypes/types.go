@@ -72,9 +72,9 @@ type VinTxPropertyARRAY []VinTxProperty
 // Vout defines a transaction output
 type Vout struct {
 	// txDbID           int64
-	Outpoint string `json:"outpoint"`
-	//TxHash           string           `json:"tx_hash"`
-	Ind              uint32           `json:"ind"`
+	TxHash           string           `json:"tx_hash"`
+	TxIndex          uint32           `json:"tx_index"`
+	TxTree           int8             `json:"tx_tree"`
 	Value            uint64           `json:"value"`
 	Version          uint16           `json:"version"`
 	ScriptPubKey     []byte           `json:"pkScriptHex"`
@@ -132,9 +132,10 @@ type Tx struct {
 	Locktime   uint32             `json:"locktime"`
 	Expiry     uint32             `json:"expiry"`
 	NumVin     uint32             `json:"numvin"`
-	Vins       VinTxPropertyARRAY `json:"vin"`
+	Vins       VinTxPropertyARRAY `json:"vins"`
 	VinDbIds   []uint64           `json:"vindbids"`
 	NumVout    uint32             `json:"numvout"`
+	Vouts      []*Vout            `json:"vouts"`
 	VoutDbIds  []uint64           `json:"voutdbids"`
 	// NOTE: VoutDbIds may not be needed if there is a vout table since each
 	// vout will have a tx_dbid

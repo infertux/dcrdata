@@ -68,6 +68,35 @@ func RetrieveSpendingTxsByFundingTx(db *sql.DB, funding_txid string) ([]uint64, 
 	return ids, txs, err
 }
 
+func RetrieveTxByHash(db *sql.DB, txHash string) (id uint64, blockHash string, err error) {
+	err = db.QueryRow(internal.SelectTxByHash, txHash).Scan(&id, &blockHash)
+	return
+}
+
+func RetrieveTxsByBlockHash(db *sql.DB, block_hash string) ([]uint64, []string, error) {
+	var ids []uint64
+	var txs []string
+	rows, err := db.Query(internal.SelectTxsByBlockHash, block_hash)
+	if err != nil {
+		return ids, txs, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id uint64
+		var tx string
+		err = rows.Scan(&id, &tx)
+		if err != nil {
+			break
+		}
+
+		ids = append(ids, id)
+		txs = append(txs, tx)
+	}
+
+	return ids, txs, err
+}
+
 func IndexVinTableOnVins(db *sql.DB) (err error) {
 	_, err = db.Exec(internal.IndexVinTableOnVins)
 	return
@@ -173,6 +202,32 @@ func RetrieveBestBlockHeight(db *sql.DB) (height uint64, hash string, id uint64,
 	return
 }
 
+func RetrieveVoutValue(db *sql.DB, txDbID uint64, voutIndex uint32) (value uint64, err error) {
+	err = db.QueryRow(internal.RetrieveVoutValue, txDbID, voutIndex).Scan(&value)
+	return
+}
+
+func RetrieveVoutValues(db *sql.DB, txDbID uint64) (values []uint64, err error) {
+	var rows *sql.Rows
+	rows, err = db.Query(internal.RetrieveVoutValues, txDbID)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var v uint64
+		err = rows.Scan(&v)
+		if err != nil {
+			break
+		}
+
+		values = append(values, v)
+	}
+
+	return
+}
+
 func InsertBlockPrevNext(db *sql.DB, block_db_id uint64,
 	hash, prev, next string) error {
 	rows, err := db.Query(insertBlockPrevNext, block_db_id, prev, hash, next)
@@ -235,7 +290,8 @@ func InsertVout(db *sql.DB, dbVout *dbtypes.Vout, checked bool) (uint64, error) 
 	insertStatement := MakeVoutInsertStatement(dbVout, checked)
 	var id uint64
 	err := db.QueryRow(insertStatement,
-		dbVout.Outpoint, dbVout.Value, dbVout.Ind, dbVout.Version,
+		dbVout.TxHash, dbVout.TxIndex, dbVout.TxIndex,
+		dbVout.Value, dbVout.Version,
 		dbVout.ScriptPubKey, dbVout.ScriptPubKeyData.ReqSigs,
 		dbVout.ScriptPubKeyData.Type).Scan(&id)
 	return id, err
@@ -258,7 +314,8 @@ func InsertVouts(db *sql.DB, dbVouts []*dbtypes.Vout, checked bool) ([]uint64, e
 		insertStatement := MakeVoutInsertStatement(vout, checked)
 		var id uint64
 		err := db.QueryRow(insertStatement,
-			vout.Outpoint, vout.Value, vout.Ind, vout.Version,
+			vout.TxHash, vout.TxIndex, vout.TxIndex,
+			vout.Value, vout.Version,
 			vout.ScriptPubKey, vout.ScriptPubKeyData.ReqSigs,
 			vout.ScriptPubKeyData.Type).Scan(&id)
 		if err != nil {
@@ -273,6 +330,26 @@ func InsertVouts(db *sql.DB, dbVouts []*dbtypes.Vout, checked bool) ([]uint64, e
 
 	dbtx.Commit()
 	return ids, nil
+}
+
+func IndexVoutTableOnTxHash(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.IndexVoutTableOnTxHash)
+	return
+}
+
+func IndexVoutTableOnTxHashIdx(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.IndexVoutTableOnTxHashIdx)
+	return
+}
+
+func DeindexVoutTableOnTxHash(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.DeindexVoutTableOnTxHash)
+	return
+}
+
+func DeindexVoutTableOnTxHashIdx(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.DeindexVoutTableOnTxHashIdx)
+	return
 }
 
 func InsertTx(db *sql.DB, dbTx *dbtypes.Tx, checked bool) (uint64, error) {

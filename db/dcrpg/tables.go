@@ -17,11 +17,19 @@ var createTableStatements = map[string]string{
 	"block_chain":  internal.CreateBlockPrevNextTable,
 }
 
+var createTypeStatements = map[string]string{
+	"vin_t":  internal.CreateVinType,
+	"vout_t": internal.CreateVoutType,
+}
+
 func TableExists(db *sql.DB, tableName string) (bool, error) {
 	rows, err := db.Query(`select relname from pg_class where relname = $1`,
 		tableName)
-	defer rows.Close()
-	return rows.Next(), err
+	if err == nil {
+		defer rows.Close()
+		return rows.Next(), nil
+	}
+	return false, err
 }
 
 func DropTables(db *sql.DB) {
@@ -44,6 +52,41 @@ func dropTable(db *sql.DB, tableName string) error {
 		fmt.Println(err)
 	}
 	return err
+}
+
+func CreateTypes(db *sql.DB) error {
+	var err error
+	for typeName, createCommand := range createTypeStatements {
+		var exists bool
+		exists, err = TypeExists(db, typeName)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Does the \"%s\" type exist? %v\n", typeName, exists)
+		if !exists {
+			fmt.Printf("Creating the \"%s\" type.\n", typeName)
+			_, err = db.Exec(createCommand)
+			if err != nil {
+				return err
+			}
+			_, err = db.Exec(fmt.Sprintf(`COMMENT ON TYPE %s
+				IS 'v1';`, typeName))
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return err
+}
+
+func TypeExists(db *sql.DB, tableName string) (bool, error) {
+	rows, err := db.Query(`select typname from pg_type where typname = $1`,
+		tableName)
+	if err == nil {
+		defer rows.Close()
+		return rows.Next(), nil
+	}
+	return false, err
 }
 
 func CreateTables(db *sql.DB) error {

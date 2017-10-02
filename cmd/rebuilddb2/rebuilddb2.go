@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"runtime/pprof"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/btcsuite/btclog"
@@ -99,6 +100,10 @@ func mainCore() error {
 		return nil
 	}
 
+	if err = dcrpg.CreateTypes(db); err != nil {
+		return err
+	}
+
 	if err = dcrpg.CreateTables(db); err != nil {
 		return err
 	}
@@ -142,23 +147,27 @@ func mainCore() error {
 	tickTime := 5 * time.Second
 	ticker := time.NewTicker(tickTime)
 	startTime := time.Now()
-
-	skipErrReport := new(bool)
-	defer func() {
+	o := sync.Once{}
+	speedReporter := func() {
+		ticker.Stop()
 		totalElapsed := time.Since(startTime).Seconds()
-		if *skipErrReport || int64(totalElapsed) == 0 {
+		if int64(totalElapsed) == 0 {
 			return
 		}
 		totalVoutPerSec := totalVouts / int64(totalElapsed)
 		totalTxPerSec := totalTxs / int64(totalElapsed)
 		log.Infof("Avg. speed: %d tx/s, %d vout/s", totalTxPerSec, totalVoutPerSec)
-	}()
+	}
+	speedReport := func() { o.Do(speedReporter) }
+	defer speedReport()
 
 	lastBlockDbID := int64(-1)
 
 	bestHeight, _, _, err := dcrpg.RetrieveBestBlockHeight(db)
+	lastBlock := int64(bestHeight)
 	if err != nil {
 		if err == sql.ErrNoRows {
+			lastBlock = -1
 			log.Info("blocks table is empty, starting fresh.")
 		} else {
 			log.Errorln("RetrieveBestBlockHeight:", err)
@@ -167,11 +176,11 @@ func mainCore() error {
 	}
 
 	// Remove indexes/constraints before bulk import
-	lastBlock := int64(bestHeight)
 	blocksToSync := height - lastBlock
 	reindexing := blocksToSync > height/2
 	dupChecks := true
 	if reindexing {
+		log.Info("Large bulk load: Removing indexes and disabling duplicate checks.")
 		dupChecks = false
 		if err = dcrpg.DeindexBlockTableOnHash(db); err != nil {
 			log.Warnln(err)
@@ -186,6 +195,12 @@ func mainCore() error {
 			log.Warnln(err)
 		}
 		if err = dcrpg.DeindexVinTableOnPrevOuts(db); err != nil {
+			log.Warnln(err)
+		}
+		if err = dcrpg.DeindexVoutTableOnTxHashIdx(db); err != nil {
+			log.Warnln(err)
+		}
+		if err = dcrpg.DeindexVoutTableOnTxHash(db); err != nil {
 			log.Warnln(err)
 		}
 	}
@@ -307,6 +322,7 @@ func mainCore() error {
 			totalVins += int64(len(dbtx.VinDbIds))
 
 			// Store the tx PK ID in the block
+			dbtx.Vouts = dbTxVouts[it]
 			dbBlock.TxDbIDs[it], err = dcrpg.InsertTx(db, dbtx, dupChecks)
 			if err != nil && err != sql.ErrNoRows {
 				log.Errorln("InsertTx:", err)
@@ -342,6 +358,7 @@ func mainCore() error {
 			totalVins += int64(len(dbtx.VinDbIds))
 
 			// Store the tx PK ID in the block
+			dbtx.Vouts = dbSTxVouts[it]
 			dbBlock.STxDbIDs[it], err = dcrpg.InsertTx(db, dbtx, dupChecks)
 			if err != nil && err != sql.ErrNoRows {
 				log.Errorln("InsertTx:", err)
@@ -386,8 +403,7 @@ func mainCore() error {
 		}
 	}
 
-	ticker.Stop()
-	*skipErrReport = true
+	speedReport()
 
 	if reindexing {
 		log.Infof("Indexing blocks table...")
@@ -410,24 +426,56 @@ func mainCore() error {
 		if err = dcrpg.IndexVinTableOnPrevOuts(db); err != nil {
 			return err
 		}
+		log.Infof("Indexing vouts table on tx hash and index...")
+		if err = dcrpg.IndexVoutTableOnTxHashIdx(db); err != nil {
+			log.Warnln(err)
+		}
+		log.Infof("Indexing vouts table on tx hash...")
+		if err = dcrpg.IndexVoutTableOnTxHash(db); err != nil {
+			log.Warnln(err)
+		}
 	}
 
 	log.Infof("Rebuild finished: %d blocks, %d transactions, %d ins, %d outs",
 		height, totalTxs, totalVins, totalVouts)
 
-	spendingTxsDbIDs, spendingTxs, err := dcrpg.RetrieveSpendingTxsByFundingTx(db,
-		"fa9acf7a4b1e9a52df1795f3e1c295613c9df44f5562de66595acc33b3831118")
+	testTx := "fa9acf7a4b1e9a52df1795f3e1c295613c9df44f5562de66595acc33b3831118"
+
+	spendingTxsDbIDs, spendingTxs, err := dcrpg.RetrieveSpendingTxsByFundingTx(
+		db, testTx)
 	if err != nil {
 		return err
 	}
 	spew.Dump(spendingTxsDbIDs, spendingTxs)
 
 	spendingTxDbID, spendingTx, err := dcrpg.RetrieveSpendingTxByTxOut(db,
-		"fa9acf7a4b1e9a52df1795f3e1c295613c9df44f5562de66595acc33b3831118", uint32(1))
+		testTx, uint32(1))
 	if err != nil {
 		return err
 	}
 	spew.Dump(spendingTxDbID, spendingTx)
+
+	txDbID, testBlockHash, err := dcrpg.RetrieveTxByHash(db, testTx)
+	if err != nil {
+		return err
+	}
+	spew.Dump(txDbID)
+
+	txDbIDs, testTxIDs, err := dcrpg.RetrieveTxsByBlockHash(db, testBlockHash)
+	if err != nil {
+		return err
+	}
+	spew.Dump(txDbIDs, testTxIDs)
+
+	vout1value, err := dcrpg.RetrieveVoutValue(db, txDbID, 1)
+	if err != nil {
+		return err
+	}
+	vout1values, err := dcrpg.RetrieveVoutValues(db, txDbID)
+	if err != nil {
+		return err
+	}
+	spew.Dump(vout1value, vout1values)
 
 	return nil
 }

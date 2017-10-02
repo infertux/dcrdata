@@ -24,5 +24,5 @@ func MakeVoutInsertStatement(vout *dbtypes.Vout, checked bool) string {
 }
 
 func MakeTxInsertStatement(tx *dbtypes.Tx, checked bool) string {
-	return internal.MakeTxInsertStatement(tx.VoutDbIds, tx.VinDbIds, checked)
+	return internal.MakeTxInsertStatement(tx.VoutDbIds, tx.VinDbIds, tx.Vouts, checked)
 }

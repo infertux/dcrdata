@@ -2,7 +2,6 @@ package dbtypes
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/dcrdata/dcrdata/txhelpers"
 	"github.com/decred/dcrd/chaincfg"
@@ -68,16 +67,16 @@ func processTransactions(txs []*wire.MsgTx, blockHash chainhash.Hash,
 			})
 		}
 
-		dbTx.VinDbIds = make([]uint64, int(dbTx.NumVin))
+		//dbTx.VinDbIds = make([]uint64, int(dbTx.NumVin))
 
 		// Vouts and their db IDs
 		dbTxVouts[txIndex] = make([]*Vout, 0, len(tx.TxOut))
 		for io, txout := range tx.TxOut {
-			outpoint := dbTx.TxID + ":" + strconv.Itoa(io)
 			vout := Vout{
-				Outpoint:     outpoint,
+				TxHash:       dbTx.TxID,
+				TxIndex:      uint32(io),
+				TxTree:       tree,
 				Value:        uint64(txout.Value),
-				Ind:          uint32(io),
 				Version:      txout.Version,
 				ScriptPubKey: txout.PkScript,
 			}
@@ -96,7 +95,7 @@ func processTransactions(txs []*wire.MsgTx, blockHash chainhash.Hash,
 			dbTxVouts[txIndex] = append(dbTxVouts[txIndex], &vout)
 		}
 
-		dbTx.VoutDbIds = make([]uint64, len(dbTxVouts[txIndex]))
+		//dbTx.VoutDbIds = make([]uint64, len(dbTxVouts[txIndex]))
 
 		dbTransactions = append(dbTransactions, dbTx)
 	}
