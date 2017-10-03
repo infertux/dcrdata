@@ -136,3 +136,72 @@ func TableVersions(db *sql.DB) map[string]int32 {
 	}
 	return versions
 }
+
+func IndexVinTableOnVins(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.IndexVinTableOnVins)
+	return
+}
+
+func IndexVinTableOnPrevOuts(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.IndexVinTableOnPrevOuts)
+	return
+}
+
+func DeindexVinTableOnVins(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.DeindexVinTableOnVins)
+	return
+}
+
+func DeindexVinTableOnPrevOuts(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.DeindexVinTableOnPrevOuts)
+	return
+}
+func IndexTransactionTableOnHashes(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.IndexTransactionTableOnHashes)
+	return
+}
+
+func DeindexTransactionTableOnHashes(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.DeindexTransactionTableOnHashes)
+	return
+}
+
+func IndexTransactionTableOnBlockIn(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.IndexTransactionTableOnBlockIn)
+	return
+}
+
+func DeindexTransactionTableOnBlockIn(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.DeindexTransactionTableOnBlockIn)
+	return
+}
+
+func IndexBlockTableOnHash(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.IndexBlockTableOnHash)
+	return
+}
+
+func DeindexBlockTableOnHash(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.DeindexBlockTableOnHash)
+	return
+}
+
+func IndexVoutTableOnTxHash(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.IndexVoutTableOnTxHash)
+	return
+}
+
+func IndexVoutTableOnTxHashIdx(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.IndexVoutTableOnTxHashIdx)
+	return
+}
+
+func DeindexVoutTableOnTxHash(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.DeindexVoutTableOnTxHash)
+	return
+}
+
+func DeindexVoutTableOnTxHashIdx(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.DeindexVoutTableOnTxHashIdx)
+	return
+}

@@ -8,6 +8,10 @@ import (
 	_ "github.com/lib/pq" // Start the PostgreSQL driver
 )
 
+// Connect opens a connection to a PostgreSQL database. The caller is
+// responsible for calling Close() on the returned db when finished using it.
+// The input host may be an IP address for TCP connection, or an absolute path
+// to a UNIX domain socket. An empty string should be provided for UNIX sockets.
 func Connect(host, port, user, pass, dbname string) (*sql.DB, error) {
 	var psqlInfo string
 	if pass == "" {
@@ -20,6 +24,8 @@ func Connect(host, port, user, pass, dbname string) (*sql.DB, error) {
 			host, user, pass, dbname)
 	}
 
+	// Only add port arg fot TCP connection since UNIX domain sockets (specified
+	// by a "/" prefix) do not have a port.
 	if !strings.HasPrefix(host, "/") {
 		psqlInfo += fmt.Sprintf(" port=%s", port)
 	}
@@ -28,7 +34,6 @@ func Connect(host, port, user, pass, dbname string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	//defer db.Close()
 
 	err = db.Ping()
 	return db, err
