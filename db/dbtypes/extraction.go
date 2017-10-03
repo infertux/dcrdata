@@ -8,7 +8,6 @@ import (
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/txscript"
 	"github.com/decred/dcrd/wire"
-	"github.com/prometheus/common/log"
 )
 
 func ExtractBlockTransactions(msgBlock *wire.MsgBlock, txTree int8,
@@ -23,7 +22,7 @@ func ExtractBlockTransactions(msgBlock *wire.MsgBlock, txTree int8,
 		dbTxs, dbTxVouts = processTransactions(msgBlock.STransactions,
 			msgBlock.BlockHash(), chainParams)
 	default:
-		log.Warnf("Invalid transaction tree: %v", txTree)
+		fmt.Printf("Invalid transaction tree: %v", txTree)
 	}
 	return dbTxs, dbTxVouts
 }
