@@ -16,7 +16,6 @@ import (
 	"github.com/dcrdata/dcrdata/db/dbtypes"
 	"github.com/dcrdata/dcrdata/db/dcrpg"
 	"github.com/dcrdata/dcrdata/rpcutils"
-	"github.com/dcrdata/dcrdata/txhelpers"
 	"github.com/decred/dcrd/wire"
 	"github.com/decred/dcrrpcclient"
 )
@@ -245,51 +244,7 @@ func mainCore() error {
 		}
 		msgBlock := block.MsgBlock()
 
-		// Create the dbtypes.Block structure
-		blockHeader := msgBlock.Header
-
-		// convert each transaction hash to a hex string
-		var txHashStrs []string
-		txHashes := msgBlock.TxHashes()
-		for i := range txHashes {
-			txHashStrs = append(txHashStrs, txHashes[i].String())
-		}
-
-		var stxHashStrs []string
-		stxHashes := msgBlock.STxHashes()
-		for i := range stxHashes {
-			stxHashStrs = append(stxHashStrs, stxHashes[i].String())
-		}
-
-		// Assemble the block
-		dbBlock := dbtypes.Block{
-			Hash:       blockHash.String(),
-			Size:       uint32(msgBlock.SerializeSize()),
-			Height:     blockHeader.Height,
-			Version:    uint32(blockHeader.Version),
-			MerkleRoot: blockHeader.MerkleRoot.String(),
-			StakeRoot:  blockHeader.StakeRoot.String(),
-			NumTx:      uint32(len(msgBlock.Transactions) + len(msgBlock.STransactions)),
-			// nil []int64 for TxDbIDs
-			NumRegTx:     uint32(len(msgBlock.Transactions)),
-			Tx:           txHashStrs,
-			NumStakeTx:   uint32(len(msgBlock.STransactions)),
-			STx:          stxHashStrs,
-			Time:         uint64(blockHeader.Timestamp.Unix()),
-			Nonce:        uint64(blockHeader.Nonce),
-			VoteBits:     blockHeader.VoteBits,
-			FinalState:   blockHeader.FinalState[:],
-			Voters:       blockHeader.Voters,
-			FreshStake:   blockHeader.FreshStake,
-			Revocations:  blockHeader.Revocations,
-			PoolSize:     blockHeader.PoolSize,
-			Bits:         blockHeader.Bits,
-			SBits:        uint64(blockHeader.SBits),
-			Difficulty:   txhelpers.GetDifficultyRatio(blockHeader.Bits, activeChain),
-			ExtraData:    blockHeader.ExtraData[:],
-			StakeVersion: blockHeader.StakeVersion,
-			PreviousHash: blockHeader.PrevBlock.String(),
-		}
+		dbBlock := dbtypes.MsgBlockToDBBlock(msgBlock, activeChain)
 
 		// Extract transactions and their vouts. Insert vouts into their pg table,
 		// returning their PK IDs, which are stored in the corresponding transaction
@@ -389,7 +344,7 @@ func mainCore() error {
 		}
 
 		// Store the block now that it has all it's transaction PK IDs
-		blockDbID, err := dcrpg.InsertBlock(db, &dbBlock, dupChecks)
+		blockDbID, err := dcrpg.InsertBlock(db, dbBlock, dupChecks)
 		if err != nil {
 			if err == sql.ErrNoRows {
 				lastBlockDbID = -1
