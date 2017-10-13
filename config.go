@@ -39,7 +39,6 @@ var (
 	defaultConfigFile        = filepath.Join(curDir, defaultConfigFilename)
 	defaultLogDir            = filepath.Join(curDir, defaultLogDirname)
 	defaultHost              = "localhost"
-	//defaultEmailSubject      = "dcrdataapi transaction notification"
 
 	defaultAPIProto           = "http"
 	defaultAPIListen          = "127.0.0.1:7777"
@@ -132,7 +131,6 @@ var (
 		PGUser:             defaultPGUser,
 		PGPass:             defaultPGPass,
 		PGHostPort:         defaultPGHostPort,
-		//EmailSubject:       defaultEmailSubject,
 	}
 )
 

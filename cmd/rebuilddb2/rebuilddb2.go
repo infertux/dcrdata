@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/btcsuite/btclog"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/dcrdata/dcrdata/db/dcrpg"
 	"github.com/dcrdata/dcrdata/rpcutils"
 	"github.com/decred/dcrrpcclient"
@@ -244,45 +243,6 @@ func mainCore() error {
 
 	log.Infof("Rebuild finished: %d blocks, %d transactions, %d ins, %d outs",
 		height, totalTxs, totalVins, totalVouts)
-
-	testTx := "fa9acf7a4b1e9a52df1795f3e1c295613c9df44f5562de66595acc33b3831118"
-
-	spendingTxns, err := db.SpendingTransactions(testTx)
-	if err != nil {
-		return err
-	}
-	spew.Dump(spendingTxns)
-
-	spendingTx, err := db.SpendingTransaction(testTx, uint32(1))
-	if err != nil {
-		return err
-	}
-	spew.Dump(spendingTx)
-
-	blockHash, err := db.TransactionBlock(testTx)
-	if err != nil {
-		return err
-	}
-
-	blockTransactions, err := db.BlockTransactions(blockHash)
-	if err != nil {
-		return err
-	}
-	spew.Dump(blockTransactions)
-
-	voutInd := uint32(6)
-	voutValue, err := db.VoutValue(testTx, voutInd)
-	if err != nil {
-		return fmt.Errorf("VoutValue: %v", err)
-	}
-	fmt.Println(testTx, voutInd, voutValue)
-
-	voutValues, err := db.VoutValues(testTx)
-	if err != nil {
-		return fmt.Errorf("VoutValues: %v", err)
-	}
-	fmt.Println(testTx, voutValues)
-	spew.Dump(voutValues, voutValue == voutValues[int(voutInd)])
 
 	return nil
 }
