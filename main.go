@@ -183,14 +183,14 @@ func mainCore() int {
 	mempoolSavers = append(mempoolSavers, webUI)
 
 	// Initial data summary for web ui
-	blockData, err := collector.Collect()
+	blockData, _, err := collector.Collect()
 	if err != nil {
 		log.Errorf("Block data collection for initial summary failed: %v",
 			err.Error())
 		return 10
 	}
 
-	if err = webUI.Store(blockData); err != nil {
+	if err = webUI.Store(blockData, nil); err != nil {
 		log.Errorf("Failed to store initial block data: %v", err.Error())
 		return 11
 	}
