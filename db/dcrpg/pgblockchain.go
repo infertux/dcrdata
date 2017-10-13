@@ -5,6 +5,7 @@ package dcrpg
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"github.com/dcrdata/dcrdata/blockdata"
 	"github.com/dcrdata/dcrdata/db/dbtypes"
@@ -57,7 +58,7 @@ func (pdb *ChainDB) SetupTables() error {
 
 	vers := TableVersions(pdb.db)
 	for tab, ver := range vers {
-		log.Debugf("Table %s: v%d\n", tab, ver)
+		log.Debugf("Table %s: v%d", tab, ver)
 	}
 	return nil
 }
@@ -69,6 +70,50 @@ func (pgb *ChainDB) DropTables() {
 func (pgb *ChainDB) Height() (uint64, error) {
 	bestHeight, _, _, err := RetrieveBestBlockHeight(pgb.db)
 	return bestHeight, err
+}
+
+func (pgb *ChainDB) SpendingTransactions(fundingTxID string) ([]string, error) {
+	_, spendingTxns, err := RetrieveSpendingTxsByFundingTx(pgb.db, fundingTxID)
+	return spendingTxns, err
+}
+
+func (pgb *ChainDB) SpendingTransaction(fundingTxID string, fundingTxVout uint32) (string, error) {
+	_, spendingTx, err := RetrieveSpendingTxByTxOut(pgb.db, fundingTxID, fundingTxVout)
+	return spendingTx, err
+}
+
+func (pgb *ChainDB) BlockTransactions(blockHash string) ([]string, error) {
+	_, blockTransactions, err := RetrieveTxsByBlockHash(pgb.db, blockHash)
+	return blockTransactions, err
+}
+
+func (pgb *ChainDB) VoutValue(txID string, vout uint32) (uint64, error) {
+	txDbID, _, err := RetrieveTxByHash(pgb.db, txID)
+	if err != nil {
+		return 0, fmt.Errorf("RetrieveTxByHash: %v", err)
+	}
+	voutValue, err := RetrieveVoutValue(pgb.db, txDbID, vout)
+	if err != nil {
+		return 0, fmt.Errorf("RetrieveVoutValue: %v", err)
+	}
+	return voutValue, nil
+}
+
+func (pgb *ChainDB) VoutValues(txID string) ([]uint64, error) {
+	txDbID, _, err := RetrieveTxByHash(pgb.db, txID)
+	if err != nil {
+		return nil, fmt.Errorf("RetrieveTxByHash: %v", err)
+	}
+	voutValues, err := RetrieveVoutValues(pgb.db, txDbID)
+	if err != nil {
+		return nil, fmt.Errorf("RetrieveVoutValues: %v", err)
+	}
+	return voutValues, nil
+}
+
+func (pgb *ChainDB) TransactionBlock(txID string) (string, error) {
+	_, blockHash, err := RetrieveTxByHash(pgb.db, txID)
+	return blockHash, err
 }
 
 func (pgb *ChainDB) Store(_ *blockdata.BlockData, msgBlock *wire.MsgBlock) error {
@@ -240,7 +285,6 @@ func (pgb *ChainDB) storeTxns(msgBlock *wire.MsgBlock, txTree int8,
 		txRes.numVouts += int64(len(dbtx.VoutDbIds))
 		if err == sql.ErrNoRows || len(dbTxVouts[it]) != len(dbtx.VoutDbIds) {
 			log.Warnf("Incomplete Vout insert.")
-			continue
 		}
 
 		dbtx.VinDbIds, err = InsertVins(pgb.db, dbtx.Vins)
@@ -252,7 +296,7 @@ func (pgb *ChainDB) storeTxns(msgBlock *wire.MsgBlock, txTree int8,
 		txRes.numVins += int64(len(dbtx.VinDbIds))
 
 		// Store the tx PK ID in the block
-		dbtx.Vouts = dbTxVouts[it]
+		//dbtx.Vouts = dbTxVouts[it]
 		(*TxDbIDs)[it], err = InsertTx(pgb.db, dbtx, pgb.dupChecks)
 		if err != nil && err != sql.ErrNoRows {
 			log.Error("InsertTx:", err)

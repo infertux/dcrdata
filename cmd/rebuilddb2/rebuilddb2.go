@@ -167,7 +167,8 @@ func mainCore() error {
 	reindexing := blocksToSync > height/2
 	if reindexing || cfg.ResumeInitSync {
 		log.Info("Large bulk load: Removing indexes and disabling duplicate checks.")
-		if err = db.DeindexAll(); err != nil {
+		err = db.DeindexAll()
+		if err != nil && !strings.Contains(err.Error(), "does not exist") {
 			return err
 		}
 		db.EnableDuplicateCheckOnInsert(false)
@@ -246,42 +247,42 @@ func mainCore() error {
 
 	testTx := "fa9acf7a4b1e9a52df1795f3e1c295613c9df44f5562de66595acc33b3831118"
 
-	spendingTxsDbIDs, spendingTxs, err := dcrpg.RetrieveSpendingTxsByFundingTx(
-		db, testTx)
+	spendingTxns, err := db.SpendingTransactions(testTx)
 	if err != nil {
 		return err
 	}
-	spew.Dump(spendingTxsDbIDs, spendingTxs)
+	spew.Dump(spendingTxns)
 
-	spendingTxDbID, spendingTx, err := dcrpg.RetrieveSpendingTxByTxOut(db,
-		testTx, uint32(1))
+	spendingTx, err := db.SpendingTransaction(testTx, uint32(1))
 	if err != nil {
 		return err
 	}
-	spew.Dump(spendingTxDbID, spendingTx)
+	spew.Dump(spendingTx)
 
-	txDbID, testBlockHash, err := dcrpg.RetrieveTxByHash(db, testTx)
+	blockHash, err := db.TransactionBlock(testTx)
 	if err != nil {
 		return err
 	}
-	spew.Dump(txDbID)
 
-	txDbIDs, testTxIDs, err := dcrpg.RetrieveTxsByBlockHash(db, testBlockHash)
+	blockTransactions, err := db.BlockTransactions(blockHash)
 	if err != nil {
 		return err
 	}
-	spew.Dump(txDbIDs, testTxIDs)
+	spew.Dump(blockTransactions)
 
-	vout1value, err := dcrpg.RetrieveVoutValue(db, txDbID, 6)
+	voutInd := uint32(6)
+	voutValue, err := db.VoutValue(testTx, voutInd)
 	if err != nil {
-		return fmt.Errorf("RetrieveVoutValue: %v", err)
+		return fmt.Errorf("VoutValue: %v", err)
 	}
-	spew.Dump(vout1value)
-	vout1values, err := dcrpg.RetrieveVoutValues(db, txDbID)
+	fmt.Println(testTx, voutInd, voutValue)
+
+	voutValues, err := db.VoutValues(testTx)
 	if err != nil {
-		return fmt.Errorf("RetrieveVoutValues: %v", err)
+		return fmt.Errorf("VoutValues: %v", err)
 	}
-	spew.Dump(vout1values, vout1value == vout1values[6])
+	fmt.Println(testTx, voutValues)
+	spew.Dump(voutValues, voutValue == voutValues[int(voutInd)])
 
 	return nil
 }

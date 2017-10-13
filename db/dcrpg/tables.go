@@ -38,7 +38,7 @@ func TableExists(db *sql.DB, tableName string) (bool, error) {
 
 func DropTables(db *sql.DB) {
 	for tableName := range createTableStatements {
-		fmt.Printf("DROPPING the \"%s\" table.\n", tableName)
+		log.Infof("DROPPING the \"%s\" table.", tableName)
 		if err := dropTable(db, tableName); err != nil {
 			log.Errorf("DROP TABLE %s failed.", tableName)
 		}
@@ -65,7 +65,7 @@ func CreateTypes(db *sql.DB) error {
 		}
 
 		if !exists {
-			log.Infof("Creating the \"%s\" type.\n", typeName)
+			log.Infof("Creating the \"%s\" type.", typeName)
 			_, err = db.Exec(createCommand)
 			if err != nil {
 				return err
@@ -76,7 +76,7 @@ func CreateTypes(db *sql.DB) error {
 				return err
 			}
 		} else {
-			log.Debugf("Type \"%s\" exist.\n", typeName)
+			log.Debugf("Type \"%s\" exist.", typeName)
 		}
 	}
 	return err
@@ -106,7 +106,7 @@ func CreateTables(db *sql.DB) error {
 		}
 
 		if !exists {
-			log.Infof("Creating the \"%s\" table.\n", tableName)
+			log.Infof("Creating the \"%s\" table.", tableName)
 			_, err = db.Exec(createCommand)
 			if err != nil {
 				return err
@@ -117,7 +117,7 @@ func CreateTables(db *sql.DB) error {
 				return err
 			}
 		} else {
-			log.Debugf("Table \"%s\" exist.\n", tableName)
+			log.Debugf("Table \"%s\" exist.", tableName)
 		}
 	}
 	return err

@@ -48,10 +48,10 @@ func RetrieveSpendingTxByTxOut(db *sql.DB, txHash string, voutIndex uint32) (id 
 	return
 }
 
-func RetrieveSpendingTxsByFundingTx(db *sql.DB, funding_txid string) ([]uint64, []string, error) {
+func RetrieveSpendingTxsByFundingTx(db *sql.DB, fundingTxID string) ([]uint64, []string, error) {
 	var ids []uint64
 	var txs []string
-	rows, err := db.Query(internal.SelectSpendingTxsByPrevTx, funding_txid)
+	rows, err := db.Query(internal.SelectSpendingTxsByPrevTx, fundingTxID)
 	if err != nil {
 		return ids, txs, err
 	}
@@ -81,10 +81,10 @@ func RetrieveTxByHash(db *sql.DB, txHash string) (id uint64, blockHash string, e
 	return
 }
 
-func RetrieveTxsByBlockHash(db *sql.DB, block_hash string) ([]uint64, []string, error) {
+func RetrieveTxsByBlockHash(db *sql.DB, blockHash string) ([]uint64, []string, error) {
 	var ids []uint64
 	var txs []string
-	rows, err := db.Query(internal.SelectTxsByBlockHash, block_hash)
+	rows, err := db.Query(internal.SelectTxsByBlockHash, blockHash)
 	if err != nil {
 		return ids, txs, err
 	}
@@ -118,10 +118,10 @@ func RetrieveSpendingTx(db *sql.DB, outpoint string) (uint64, *dbtypes.Tx, error
 	return id, &tx, err
 }
 
-func RetrieveSpendingTxs(db *sql.DB, funding_txid string) ([]uint64, []*dbtypes.Tx, error) {
+func RetrieveSpendingTxs(db *sql.DB, fundingTxID string) ([]uint64, []*dbtypes.Tx, error) {
 	var ids []uint64
 	var txs []*dbtypes.Tx
-	rows, err := db.Query(internal.SelectTxsByPrevOutTx, funding_txid)
+	rows, err := db.Query(internal.SelectTxsByPrevOutTx, fundingTxID)
 	if err != nil {
 		return ids, txs, err
 	}
