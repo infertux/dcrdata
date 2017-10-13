@@ -269,7 +269,7 @@ func (r *storeTxnsResult) Error() string {
 func (pgb *ChainDB) storeTxns(msgBlock *wire.MsgBlock, txTree int8,
 	chainParams *chaincfg.Params, TxDbIDs *[]uint64) storeTxnsResult {
 	dbTransactions, dbTxVouts := dbtypes.ExtractBlockTransactions(msgBlock,
-		wire.TxTreeRegular, chainParams)
+		txTree, chainParams)
 
 	var txRes storeTxnsResult
 
