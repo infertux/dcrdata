@@ -52,6 +52,11 @@ var (
 	defaultMPTriggerTickets   = 1
 
 	defaultDBFileName = "dcrdata.sqlt.db"
+
+	defaultPGHostPort = "127.0.0.1:5432"
+	defaultPGUser     = "dcrdata"
+	defaultPGPass     = ""
+	defaultPGDBName   = "dcrdata"
 )
 
 type config struct {
@@ -83,6 +88,11 @@ type config struct {
 	MPTriggerTickets   int    `long:"mp-ticket-trigger" description:"The number minimum number of new tickets that must be seen to trigger a new mempool report."`
 	DumpAllMPTix       bool   `long:"dumpallmptix" description:"Dump to file the fees of all the tickets in mempool."`
 	DBFileName         string `long:"dbfile" description:"SQLite DB file name (default is dcrdata.sqlt.db)."`
+
+	PGDBName   string `long:"pgdbname" description:"PostgreSQL DB name."`
+	PGUser     string `long:"pguser" description:"PostgreSQL DB user."`
+	PGPass     string `long:"pgpass" description:"PostgreSQL DB password."`
+	PGHostPort string `long:"pghostport" description:"PostgreSQL server host:port."`
 
 	//WatchAddresses []string `short:"w" long:"watchaddress" description:"Watched address (receiving). One per line."`
 	//WatchOutpoints []string `short:"o" long:"watchout" description:"Watched outpoint (sending). One per line."`
@@ -118,6 +128,10 @@ var (
 		MempoolMaxInterval: defaultMempoolMaxInterval,
 		MPTriggerTickets:   defaultMPTriggerTickets,
 		DBFileName:         defaultDBFileName,
+		PGDBName:           defaultPGDBName,
+		PGUser:             defaultPGUser,
+		PGPass:             defaultPGPass,
+		PGHostPort:         defaultPGHostPort,
 		//EmailSubject:       defaultEmailSubject,
 	}
 )
