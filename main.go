@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/dcrdata/dcrdata/blockdata"
+	"github.com/dcrdata/dcrdata/db/dbtypes"
 	"github.com/dcrdata/dcrdata/db/dcrpg"
 	"github.com/dcrdata/dcrdata/db/dcrsqlite"
 	"github.com/dcrdata/dcrdata/explorer"
@@ -152,22 +154,57 @@ func mainCore() error {
 		close(quit)
 	}()
 
-	// Resync db
-	var waitSync sync.WaitGroup
-	waitSync.Add(1)
-	// start as goroutine to let chain monitor start, but the sync will keep up
-	// with current height, it is not likely to matter.
-	if err = sqliteDB.SyncDBWithPoolValue(&waitSync, quit); err != nil {
-		return fmt.Errorf("Resync failed: %v", err)
-	}
+	newPGIndexes := false
 
-	// wait for resync before serving or collecting
-	waitSync.Wait()
+	// Simultaneously synchronize the ChainDB (PostgreSQL) and the block/stake
+	// info DB (sqlite). They don't communicate, so we'll just ensure they exit
+	// with the same best block height by calling them repeatedly in a loop.
+	var sqliteHeight, pgHeight int64
+	sqliteSyncRes := make(chan dbtypes.SyncResult)
+	pgSyncRes := make(chan dbtypes.SyncResult)
+	for {
+		// Launch the sync functions for both DBs
+		go sqliteDB.SyncDBAsync(sqliteSyncRes, quit)
+		go db.SyncChainDBAsync(pgSyncRes, dcrdClient, quit, newPGIndexes)
 
-	select {
-	case <-quit:
-		return nil
-	default:
+		// Wait for the results
+		sqliteRes := <-sqliteSyncRes
+		sqliteHeight = sqliteRes.Height
+		log.Infof("SQLite sync ended at height %d", sqliteHeight)
+		pgRes := <-pgSyncRes
+		pgHeight = pgRes.Height
+		log.Infof("PostgreSQL sync ended at height %d", pgHeight)
+
+		// See if there was a SIGINT (CTRL+C)
+		select {
+		case <-quit:
+			log.Info("Quit signal received during DB sync.")
+			return nil
+		default:
+		}
+
+		// Check for errors and combine if necessary
+		if sqliteRes.Error != nil {
+			if pgRes.Error != nil {
+				log.Error("dcrsqlite.SyncDBAsync AND dcrpg.SyncChainDBAsync "+
+					"failed at heights %d and %d, respectively.",
+					sqliteRes.Height, pgRes.Height)
+				errCombined := fmt.Sprintln(sqliteRes.Error, ", ", pgRes.Error)
+				return errors.New(errCombined)
+			}
+			log.Errorf("dcrsqlite.SyncDBAsync failed at height %d.", sqliteRes.Height)
+			return sqliteRes.Error
+		} else if pgRes.Error != nil {
+			log.Errorf("dcrpg.SyncChainDBAsync failed at height %d.", pgRes.Height)
+			return pgRes.Error
+		}
+
+		// Break loop to continue starting dcrdata.
+		if pgHeight == sqliteHeight {
+			break
+		}
+		log.Infof("Restarting sync with PostgreSQL at %d, SQLite at %d.",
+			pgHeight, sqliteHeight)
 	}
 
 	// Block data collector
