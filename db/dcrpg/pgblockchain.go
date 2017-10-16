@@ -82,13 +82,13 @@ func (pgb *ChainDB) SpendingTransaction(fundingTxID string, fundingTxVout uint32
 	return spendingTx, err
 }
 
-func (pgb *ChainDB) BlockTransactions(blockHash string) ([]string, error) {
-	_, blockTransactions, err := RetrieveTxsByBlockHash(pgb.db, blockHash)
-	return blockTransactions, err
+func (pgb *ChainDB) BlockTransactions(blockHash string) ([]string, []uint32, error) {
+	_, blockTransactions, blockInds, err := RetrieveTxsByBlockHash(pgb.db, blockHash)
+	return blockTransactions, blockInds, err
 }
 
 func (pgb *ChainDB) VoutValue(txID string, vout uint32) (uint64, error) {
-	txDbID, _, err := RetrieveTxByHash(pgb.db, txID)
+	txDbID, _, _, err := RetrieveTxByHash(pgb.db, txID)
 	if err != nil {
 		return 0, fmt.Errorf("RetrieveTxByHash: %v", err)
 	}
@@ -100,7 +100,7 @@ func (pgb *ChainDB) VoutValue(txID string, vout uint32) (uint64, error) {
 }
 
 func (pgb *ChainDB) VoutValues(txID string) ([]uint64, error) {
-	txDbID, _, err := RetrieveTxByHash(pgb.db, txID)
+	txDbID, _, _, err := RetrieveTxByHash(pgb.db, txID)
 	if err != nil {
 		return nil, fmt.Errorf("RetrieveTxByHash: %v", err)
 	}
@@ -111,9 +111,9 @@ func (pgb *ChainDB) VoutValues(txID string) ([]uint64, error) {
 	return voutValues, nil
 }
 
-func (pgb *ChainDB) TransactionBlock(txID string) (string, error) {
-	_, blockHash, err := RetrieveTxByHash(pgb.db, txID)
-	return blockHash, err
+func (pgb *ChainDB) TransactionBlock(txID string) (string, uint32, error) {
+	_, blockHash, blockInd, err := RetrieveTxByHash(pgb.db, txID)
+	return blockHash, blockInd, err
 }
 
 func (pgb *ChainDB) Store(_ *blockdata.BlockData, msgBlock *wire.MsgBlock) error {

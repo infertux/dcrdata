@@ -76,17 +76,18 @@ func RetrieveSpendingTxsByFundingTx(db *sql.DB, fundingTxID string) ([]uint64, [
 	return ids, txs, err
 }
 
-func RetrieveTxByHash(db *sql.DB, txHash string) (id uint64, blockHash string, err error) {
-	err = db.QueryRow(internal.SelectTxByHash, txHash).Scan(&id, &blockHash)
+func RetrieveTxByHash(db *sql.DB, txHash string) (id uint64, blockHash string, blockInd uint32, err error) {
+	err = db.QueryRow(internal.SelectTxByHash, txHash).Scan(&id, &blockHash, &blockInd)
 	return
 }
 
-func RetrieveTxsByBlockHash(db *sql.DB, blockHash string) ([]uint64, []string, error) {
+func RetrieveTxsByBlockHash(db *sql.DB, blockHash string) ([]uint64, []string, []uint32, error) {
 	var ids []uint64
 	var txs []string
+	var blockInds []uint32
 	rows, err := db.Query(internal.SelectTxsByBlockHash, blockHash)
 	if err != nil {
-		return ids, txs, err
+		return ids, txs, blockInds, err
 	}
 	defer func() {
 		if e := rows.Close(); e != nil {
@@ -97,16 +98,18 @@ func RetrieveTxsByBlockHash(db *sql.DB, blockHash string) ([]uint64, []string, e
 	for rows.Next() {
 		var id uint64
 		var tx string
-		err = rows.Scan(&id, &tx)
+		var bind uint32
+		err = rows.Scan(&id, &tx, &bind)
 		if err != nil {
 			break
 		}
 
 		ids = append(ids, id)
 		txs = append(txs, tx)
+		blockInds = append(blockInds, bind)
 	}
 
-	return ids, txs, err
+	return ids, txs, blockInds, err
 }
 
 func RetrieveSpendingTx(db *sql.DB, outpoint string) (uint64, *dbtypes.Tx, error) {

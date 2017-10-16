@@ -1,3 +1,5 @@
+// +build mainnettest
+
 package dcrpg
 
 import (
@@ -17,7 +19,7 @@ func openDB() (func() error, error) {
 	dbi := DBInfo{
 		Host:   "localhost",
 		Port:   "5432",
-		User:   "jchappelow",
+		User:   "dcrdata",
 		Pass:   "",
 		DBName: "dcrdata",
 	}
@@ -86,18 +88,18 @@ func TestStuff(t *testing.T) {
 	}
 
 	// Block containing the transaction
-	blockHash, err := db.TransactionBlock(testTx)
+	blockHash, blockInd, err := db.TransactionBlock(testTx)
 	if err != nil {
 		t.Fatal("TransactionBlock", err)
 	}
-	t.Log(blockHash)
+	t.Log(blockHash, blockInd)
 	if testBlockHash != blockHash {
 		t.Fatalf("Incorrect block hash. Got %s, wanted %s.",
 			blockHash, testBlockHash)
 	}
 
 	// List block transactions
-	blockTransactions, err := db.BlockTransactions(blockHash)
+	blockTransactions, blockVoutInds, err := db.BlockTransactions(blockHash)
 	if err != nil {
 		t.Error("BlockTransactions", err)
 	}
@@ -107,8 +109,18 @@ func TestStuff(t *testing.T) {
 			len(blockTransactions), numBlockTx)
 	}
 
-	if blockTransactions[testTxBlockInd] != testTx {
-		t.Fatalf("Transaction not found in block at Vout[%d]. Got %s, wanted %s.",
+	var blockTxInd int
+	t.Log(spew.Sdump(blockVoutInds), spew.Sdump(blockTransactions))
+	for i, voutInd := range blockVoutInds {
+		t.Log(i, voutInd)
+		if int(voutInd) == testTxBlockInd {
+			blockTxInd = i
+			t.Log(i, voutInd, blockTransactions[i])
+		}
+	}
+
+	if blockTransactions[blockTxInd] != testTx {
+		t.Fatalf("Transaction not found in block at index %d. Got %s, wanted %s.",
 			testTxBlockInd, blockTransactions[testTxBlockInd], testTx)
 	}
 
