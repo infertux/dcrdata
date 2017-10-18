@@ -19,7 +19,7 @@ func Connect(host, port, user, pass, dbname string) (*sql.DB, error) {
 			"dbname=%s sslmode=disable",
 			host, user, dbname)
 	} else {
-		psqlInfo = fmt.Sprintf("host=%s ser=%s "+
+		psqlInfo = fmt.Sprintf("host=%s user=%s "+
 			"password=%s dbname=%s sslmode=disable",
 			host, user, pass, dbname)
 	}
