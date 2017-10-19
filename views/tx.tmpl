@@ -155,7 +155,7 @@
                     <th class="text-center">Spent</th>
                 </thead>
                 <tbody>
-                    {{range .Vout}} 
+                    {{range $i, $v := .Vout}}
                     <tr>
                         <td class="break-word">
                             {{if ne .Amount 0.0}}
@@ -172,7 +172,14 @@
                         <td class="text-right">
                             {{template "decimalParts" (float64AsDecimalParts .Amount false)}}
                         </td>
-                        <td>{{.Spent}}</td>
+                        <td>{{with $spending := (index $.SpendingTxns $i) }}
+                            {{if $spending.Hash}}
+                                <a href="/explorer/tx/{{$spending.Hash}}">{{$v.Spent}}</a>
+                            {{else}}
+                                {{$v.Spent}}
+                            {{end}}
+                            {{end}}
+                        </td>
                     </tr>
                     {{end}}
                 </tbody>
