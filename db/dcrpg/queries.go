@@ -9,9 +9,69 @@ import (
 	"github.com/lib/pq"
 )
 
+func RetrieveVoutIDByOutpoint(db *sql.DB, txHash string, voutIndex uint32) (id uint64, err error) {
+	err = db.QueryRow(internal.SelectVoutIDByOutpoint, txHash, voutIndex).Scan(&id)
+	return
+}
+
+func SetSpendingForAddress(db *sql.DB, addrDbID uint64, spendingTxDbID uint64,
+	spendingTxHash string, spendingTxVinIndex uint32, vinDbID uint64) error {
+	_, err := db.Exec(internal.SetAddressSpending, addrDbID, spendingTxDbID,
+		spendingTxHash, spendingTxVinIndex, vinDbID)
+	return err
+}
+
+func RetrieveAddressIDsByOutpoint(db *sql.DB, txHash string,
+	voutIndex uint32) ([]uint64, []string, error) {
+	var ids []uint64
+	var addresses []string
+	rows, err := db.Query(internal.SelectAddressIDsByFundingOutpoint, txHash, voutIndex)
+	if err != nil {
+		return ids, addresses, err
+	}
+	defer func() {
+		if e := rows.Close(); e != nil {
+			log.Errorf("Close of Query failed: %v", e)
+		}
+	}()
+
+	for rows.Next() {
+		var id uint64
+		var addr string
+		err = rows.Scan(&id, &addr)
+		if err != nil {
+			break
+		}
+
+		ids = append(ids, id)
+		addresses = append(addresses, addr)
+	}
+
+	return ids, addresses, err
+}
+
+func RetrieveSpendingTxByVinID(db *sql.DB, vinDbID uint64) (tx string,
+	voutIndex uint32, tree int8, err error) {
+	err = db.QueryRow(internal.SelectSpendingTxByVinID, vinDbID).Scan(&tx, &voutIndex, &tree)
+	return
+}
+
+func RetrieveFundingOutpointByTxIn(db *sql.DB, txHash string,
+	vinIndex uint32) (id uint64, tx string, index uint32, tree int8, err error) {
+	err = db.QueryRow(internal.SelectFundingOutpointByTxIn, txHash, vinIndex).
+		Scan(&id, &tx, &index, &tree)
+	return
+}
+
+func RetrieveFundingOutpointByVinID(db *sql.DB, vinDbID uint64) (tx string, index uint32, tree int8, err error) {
+	err = db.QueryRow(internal.SelectFundingOutpointByVinID, vinDbID).
+		Scan(&tx, &index, &tree)
+	return
+}
+
 func RetrieveFundingTxByTxIn(db *sql.DB, txHash string, vinIndex uint32) (id uint64, tx string, err error) {
-	err = db.QueryRow(internal.SelectFundingTxByTxIn, txHash, vinIndex).Scan(
-		&id, &tx)
+	err = db.QueryRow(internal.SelectFundingTxByTxIn, txHash, vinIndex).
+		Scan(&id, &tx)
 	return
 }
 
@@ -44,9 +104,9 @@ func RetrieveFundingTxsByTx(db *sql.DB, txHash string) ([]uint64, []*dbtypes.Tx,
 }
 
 func RetrieveSpendingTxByTxOut(db *sql.DB, txHash string,
-	voutIndex uint32) (id uint64, tx string, vin uint32, err error) {
-	err = db.QueryRow(internal.SelectSpendingTxByPrevOut, txHash, voutIndex).Scan(
-		&id, &tx, &vin)
+	voutIndex uint32) (id uint64, tx string, vin uint32, tree int8, err error) {
+	err = db.QueryRow(internal.SelectSpendingTxByPrevOut,
+		txHash, voutIndex).Scan(&id, &tx, &vin, &tree)
 	return
 }
 
@@ -304,10 +364,11 @@ func InsertVout(db *sql.DB, dbVout *dbtypes.Vout, checked bool) (uint64, error) 
 	return id, err
 }
 
-func InsertVouts(db *sql.DB, dbVouts []*dbtypes.Vout, checked bool) ([]uint64, error) {
+func InsertVouts(db *sql.DB, dbVouts []*dbtypes.Vout, checked bool) ([]uint64, []dbtypes.AddressRow, error) {
+	addressRows := make([]dbtypes.AddressRow, 0, len(dbVouts)*2)
 	dbtx, err := db.Begin()
 	if err != nil {
-		return nil,
+		return nil, nil,
 			fmt.Errorf("unable to begin database transaction: %v + %v (rollback)",
 				err, dbtx.Rollback())
 	}
@@ -316,7 +377,7 @@ func InsertVouts(db *sql.DB, dbVouts []*dbtypes.Vout, checked bool) ([]uint64, e
 	if err != nil {
 		log.Errorf("Vout INSERT prepare: %v", err)
 		dbtx.Rollback()
-		return nil, err
+		return nil, nil, err
 	}
 
 	ids := make([]uint64, 0, len(dbVouts))
@@ -327,6 +388,59 @@ func InsertVouts(db *sql.DB, dbVouts []*dbtypes.Vout, checked bool) ([]uint64, e
 			vout.ScriptPubKey, vout.ScriptPubKeyData.ReqSigs,
 			vout.ScriptPubKeyData.Type,
 			pq.Array(vout.ScriptPubKeyData.Addresses)).Scan(&id)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				continue
+			}
+			stmt.Close()
+			if errRoll := dbtx.Rollback(); errRoll != nil {
+				log.Errorf("Rollback failed: %v", errRoll)
+			}
+			return nil, nil, err
+		}
+		for _, addr := range vout.ScriptPubKeyData.Addresses {
+			addressRows = append(addressRows, dbtypes.AddressRow{
+				Address:       addr,
+				FundingTxHash: vout.TxHash,
+				VoutDbID:      id,
+				Value:         vout.Value,
+			})
+		}
+		ids = append(ids, id)
+	}
+
+	stmt.Close()
+
+	return ids, addressRows, dbtx.Commit()
+}
+
+func InsertAddressOut(db *sql.DB, dbA *dbtypes.AddressRow) (uint64, error) {
+	var id uint64
+	err := db.QueryRow(internal.InsertAddressRow, dbA.Address, dbA.FundingTxDbID,
+		dbA.FundingTxHash, dbA.FundingTxVoutIndex, dbA.VoutDbID, dbA.Value).Scan(&id)
+	return id, err
+}
+
+func InsertAddressOuts(db *sql.DB, dbAs []*dbtypes.AddressRow) ([]uint64, error) {
+	dbtx, err := db.Begin()
+	if err != nil {
+		return nil,
+			fmt.Errorf("unable to begin database transaction: %v + %v (rollback)",
+				err, dbtx.Rollback())
+	}
+
+	stmt, err := dbtx.Prepare(internal.InsertAddressRow)
+	if err != nil {
+		log.Errorf("AddressRow INSERT prepare: %v", err)
+		dbtx.Rollback()
+		return nil, err
+	}
+
+	ids := make([]uint64, 0, len(dbAs))
+	for _, dbA := range dbAs {
+		var id uint64
+		err := stmt.QueryRow(dbA.Address, dbA.FundingTxDbID, dbA.FundingTxHash,
+			dbA.FundingTxVoutIndex, dbA.VoutDbID, dbA.Value).Scan(&id)
 		if err != nil {
 			if err == sql.ErrNoRows {
 				continue

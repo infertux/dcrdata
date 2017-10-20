@@ -15,6 +15,7 @@ var createTableStatements = map[string]string{
 	"vins":         internal.CreateVinTable,
 	"vouts":        internal.CreateVoutTable,
 	"block_chain":  internal.CreateBlockPrevNextTable,
+	"addresses":    internal.CreateAddressTable,
 }
 
 var createTypeStatements = map[string]string{
@@ -149,6 +150,8 @@ func TableVersions(db *sql.DB) map[string]int32 {
 	return versions
 }
 
+// Vins table indexes
+
 func IndexVinTableOnVins(db *sql.DB) (err error) {
 	_, err = db.Exec(internal.IndexVinTableOnVins)
 	return
@@ -168,6 +171,9 @@ func DeindexVinTableOnPrevOuts(db *sql.DB) (err error) {
 	_, err = db.Exec(internal.DeindexVinTableOnPrevOuts)
 	return
 }
+
+// Transactions table indexes
+
 func IndexTransactionTableOnHashes(db *sql.DB) (err error) {
 	_, err = db.Exec(internal.IndexTransactionTableOnHashes)
 	return
@@ -188,6 +194,8 @@ func DeindexTransactionTableOnBlockIn(db *sql.DB) (err error) {
 	return
 }
 
+// Blocks table indexes
+
 func IndexBlockTableOnHash(db *sql.DB) (err error) {
 	_, err = db.Exec(internal.IndexBlockTableOnHash)
 	return
@@ -197,6 +205,8 @@ func DeindexBlockTableOnHash(db *sql.DB) (err error) {
 	_, err = db.Exec(internal.DeindexBlockTableOnHash)
 	return
 }
+
+// Vouts table indexes
 
 func IndexVoutTableOnTxHash(db *sql.DB) (err error) {
 	_, err = db.Exec(internal.IndexVoutTableOnTxHash)
@@ -215,5 +225,37 @@ func DeindexVoutTableOnTxHash(db *sql.DB) (err error) {
 
 func DeindexVoutTableOnTxHashIdx(db *sql.DB) (err error) {
 	_, err = db.Exec(internal.DeindexVoutTableOnTxHashIdx)
+	return
+}
+
+// Addresses table indexes
+
+func IndexAddressTableOnAddress(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.IndexAddressTableOnAddress)
+	return
+}
+
+func DeindexAddressTableOnAddress(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.DeindexAddressTableOnAddress)
+	return
+}
+
+func IndexAddressTableOnAddressAndVoutID(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.IndexAddressTableOnAddressAndVoutID)
+	return
+}
+
+func DeindexAddressTableOnAddressAndVoutID(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.DeindexAddressTableOnAddressAndVoutID)
+	return
+}
+
+func IndexAddressTableOnTxHash(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.IndexAddressTableOnFundingTx)
+	return
+}
+
+func DeindexAddressTableOnTxHash(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.DeindexAddressTableOnFundingTx)
 	return
 }

@@ -78,9 +78,9 @@ func (pgb *ChainDB) SpendingTransactions(fundingTxID string) ([]string, []uint32
 }
 
 func (pgb *ChainDB) SpendingTransaction(fundingTxID string,
-	fundingTxVout uint32) (string, uint32, error) {
-	_, spendingTx, vinInd, err := RetrieveSpendingTxByTxOut(pgb.db, fundingTxID, fundingTxVout)
-	return spendingTx, vinInd, err
+	fundingTxVout uint32) (string, uint32, int8, error) {
+	_, spendingTx, vinInd, tree, err := RetrieveSpendingTxByTxOut(pgb.db, fundingTxID, fundingTxVout)
+	return spendingTx, vinInd, tree, err
 }
 
 func (pgb *ChainDB) BlockTransactions(blockHash string) ([]string, []uint32, []int8, error) {
@@ -117,6 +117,7 @@ func (pgb *ChainDB) TransactionBlock(txID string) (string, uint32, int8, error) 
 	return blockHash, blockInd, tree, err
 }
 
+// Store satisfies BlockDataSaver
 func (pgb *ChainDB) Store(_ *blockdata.BlockData, msgBlock *wire.MsgBlock) error {
 	if pgb == nil {
 		return nil
@@ -125,6 +126,7 @@ func (pgb *ChainDB) Store(_ *blockdata.BlockData, msgBlock *wire.MsgBlock) error
 	return err
 }
 
+// DeindexAll drops all of the indexes in all tables
 func (pgb *ChainDB) DeindexAll() error {
 	var err, errAny error
 	if err = DeindexBlockTableOnHash(pgb.db); err != nil {
@@ -155,9 +157,22 @@ func (pgb *ChainDB) DeindexAll() error {
 		log.Warn(err)
 		errAny = err
 	}
+	if err = DeindexAddressTableOnAddress(pgb.db); err != nil {
+		log.Warn(err)
+		errAny = err
+	}
+	if err = DeindexAddressTableOnAddressAndVoutID(pgb.db); err != nil {
+		log.Warn(err)
+		errAny = err
+	}
+	if err = DeindexAddressTableOnTxHash(pgb.db); err != nil {
+		log.Warn(err)
+		errAny = err
+	}
 	return errAny
 }
 
+// IndexAll creates all of the indexes in all tables
 func (pgb *ChainDB) IndexAll() error {
 	log.Infof("Indexing blocks table...")
 	if err := IndexBlockTableOnHash(pgb.db); err != nil {
@@ -184,9 +199,22 @@ func (pgb *ChainDB) IndexAll() error {
 		return err
 	}
 	log.Infof("Indexing vouts table on tx hash...")
-	return IndexVoutTableOnTxHash(pgb.db)
+	if err := IndexVoutTableOnTxHash(pgb.db); err != nil {
+		return err
+	}
+	log.Infof("Indexing addresses table on address...")
+	if err := IndexAddressTableOnAddress(pgb.db); err != nil {
+		return err
+	}
+	log.Infof("Indexing addresses table on address and vout Db ID...")
+	if err := IndexAddressTableOnAddressAndVoutID(pgb.db); err != nil {
+		return err
+	}
+	log.Infof("Indexing addresses table on funding tx hash...")
+	return IndexAddressTableOnTxHash(pgb.db)
 }
 
+// StoreBlock processes the input wire.MsgBlock, and saves to the data tables
 func (pgb *ChainDB) StoreBlock(msgBlock *wire.MsgBlock) (numVins int64, numVouts int64, err error) {
 	// Convert the wire.MsgBlock to a dbtypes.Block
 	dbBlock := dbtypes.MsgBlockToDBBlock(msgBlock, pgb.chainParams)
@@ -272,19 +300,22 @@ func (r *storeTxnsResult) Error() string {
 
 func (pgb *ChainDB) storeTxns(msgBlock *wire.MsgBlock, txTree int8,
 	chainParams *chaincfg.Params, TxDbIDs *[]uint64) storeTxnsResult {
-	dbTransactions, dbTxVouts, dbTxVins := dbtypes.ExtractBlockTransactions(msgBlock,
-		txTree, chainParams)
+	dbTransactions, dbTxVouts, dbTxVins := dbtypes.ExtractBlockTransactions(
+		msgBlock, txTree, chainParams)
 
 	var txRes storeTxnsResult
+	dbAddressRows := make([][]dbtypes.AddressRow, len(dbTransactions))
+	var totalAddressRows int
 
 	var err error
 	for it, dbtx := range dbTransactions {
-		dbtx.VoutDbIds, err = InsertVouts(pgb.db, dbTxVouts[it], pgb.dupChecks)
+		dbtx.VoutDbIds, dbAddressRows[it], err = InsertVouts(pgb.db, dbTxVouts[it], pgb.dupChecks)
 		if err != nil && err != sql.ErrNoRows {
 			log.Error("InsertVouts:", err)
 			txRes.err = err
 			return txRes
 		}
+		totalAddressRows += len(dbAddressRows[it])
 		txRes.numVouts += int64(len(dbtx.VoutDbIds))
 		if err == sql.ErrNoRows || len(dbTxVouts[it]) != len(dbtx.VoutDbIds) {
 			log.Warnf("Incomplete Vout insert.")
@@ -299,12 +330,74 @@ func (pgb *ChainDB) storeTxns(msgBlock *wire.MsgBlock, txTree int8,
 		txRes.numVins += int64(len(dbtx.VinDbIds))
 	}
 
-	// Get the tx PK IDs for the block
+	// Get the tx PK IDs for storage in the blocks table
 	*TxDbIDs, err = InsertTxns(pgb.db, dbTransactions, pgb.dupChecks)
 	if err != nil && err != sql.ErrNoRows {
 		log.Error("InsertTxns:", err)
 		txRes.err = err
 		return txRes
+	}
+
+	// Store tx Db IDs as funding tx in AddressRows and rearrange
+	dbAddressRowsFlat := make([]*dbtypes.AddressRow, 0, totalAddressRows)
+	for it, txDbID := range *TxDbIDs {
+		// Set the tx ID of the funding transactions
+		for iv := range dbAddressRows[it] {
+			// Transaction that pays to the address
+			dba := &dbAddressRows[it][iv]
+			dba.FundingTxDbID = txDbID
+			// Funding tx hash, vout id, value, and address are already assigned
+			// by InsertVouts. Only the funding tx DB ID was needed.
+			dbAddressRowsFlat = append(dbAddressRowsFlat, dba)
+		}
+	}
+
+	// Insert each new AddressRow, absent spending fields
+	_, err = InsertAddressOuts(pgb.db, dbAddressRowsFlat)
+	if err != nil {
+		log.Error("InsertAddressOuts:", err)
+		txRes.err = err
+		return txRes
+	}
+
+	// Check the new vins and update spending tx data in Addresses table
+	for it, txDbID := range *TxDbIDs {
+		for iv := range dbTxVins[it] {
+			// Transaction that spends an outpoint paying to >=0 addresses
+			vin := &dbTxVins[it][iv]
+			// Get the tx hash and vout index (previous output) from vins table
+			// vinDbID, txHash, txIndex, _, err := RetrieveFundingOutpointByTxIn(
+			// 	pgb.db, vin.TxID, vin.TxIndex)
+			vinDbID := dbTransactions[it].VinDbIds[iv]
+			txHash, txIndex, _, err := RetrieveFundingOutpointByVinID(pgb.db, vinDbID)
+			if err != nil && err != sql.ErrNoRows {
+				if err != sql.ErrNoRows {
+					log.Warnf("No funding transaction found for input %s:%d", vin.TxID, vin.TxIndex)
+					continue
+				}
+				log.Error("RetrieveFundingOutpointByTxIn:", err)
+				continue
+			}
+
+			// Find the address rows for the vout (txHash:txIndex) obtained above
+			addrDbIDs, addresses, err := RetrieveAddressIDsByOutpoint(pgb.db, txHash, txIndex)
+			if err != nil {
+				if err != sql.ErrNoRows {
+					log.Warnf("No rows in addresses table found for outpoint %s:%d", txHash, txIndex)
+					continue
+				}
+				log.Error("RetrieveAddressIDsByOutpoint:", err)
+				continue
+			}
+			for ia, addrDbID := range addrDbIDs {
+				// Store spending tx info in the addresses row with found id
+				err = SetSpendingForAddress(pgb.db, addrDbID,
+					txDbID, vin.TxID, vin.TxIndex, vinDbID)
+				if err != nil {
+					log.Errorf("SetSpendingForAddress (addr=%s): %v", addresses[ia], err)
+				}
+			}
+		}
 	}
 
 	return txRes
