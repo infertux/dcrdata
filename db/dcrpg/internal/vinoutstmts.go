@@ -17,7 +17,7 @@ const (
 		tx_tree INT2,
 		prev_tx_hash TEXT,
 		prev_tx_index INT8,
-		prev_tx_tree INT2,
+		prev_tx_tree INT2
 	);`
 
 	InsertVinRow0 = `INSERT INTO vins (tx_hash, tx_index, tx_tree, prev_tx_hash, prev_tx_index, prev_tx_tree)

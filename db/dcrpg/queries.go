@@ -304,8 +304,8 @@ func UpdateBlockNext(db *sql.DB, block_db_id uint64, next string) error {
 
 func InsertVin(db *sql.DB, dbVin dbtypes.VinTxProperty) (id uint64, err error) {
 	err = db.QueryRow(internal.InsertVinRow,
-		dbVin.TxID, dbVin.TxIndex,
-		dbVin.PrevTxHash, dbVin.PrevTxIndex).Scan(&id)
+		dbVin.TxID, dbVin.TxIndex, dbVin.TxTree,
+		dbVin.PrevTxHash, dbVin.PrevTxIndex, dbVin.PrevTxTree).Scan(&id)
 	return
 }
 
@@ -324,14 +324,15 @@ func InsertVins(db *sql.DB, dbVins dbtypes.VinTxPropertyARRAY) ([]uint64, error)
 		return nil, err
 	}
 
+	// TODO/Question: Should we skip inserting coinbase txns, which have same PrevTxHash?
+
 	ids := make([]uint64, 0, len(dbVins))
 	for _, vin := range dbVins {
 		var id uint64
-		err = stmt.QueryRow(vin.TxID, vin.TxIndex,
-			vin.PrevTxHash, vin.PrevTxIndex).Scan(&id)
+		err = stmt.QueryRow(vin.TxID, vin.TxIndex, vin.TxTree,
+			vin.PrevTxHash, vin.PrevTxIndex, vin.PrevTxTree).Scan(&id)
 		if err != nil {
-			log.Errorf("INSERT exec failed: %v", err)
-			continue
+			return ids, fmt.Errorf("InsertVins INSERT exec failed: %v", err)
 		}
 		// err = db.QueryRow("SELECT currval(pg_get_serial_sequence('vins', 'id'));").Scan(&id) // currval('vins_id_seq')
 		if err != nil {

@@ -183,6 +183,7 @@ type VinTxProperty struct {
 	ValueIn     uint64 `json:"amountin"`
 	TxID        string `json:"tx_hash"`
 	TxIndex     uint32 `json:"tx_index"`
+	TxTree      uint16 `json:"tx_tree"`
 	BlockHeight uint32 `json:"blockheight"`
 	BlockIndex  uint32 `json:"blockindex"`
 	ScriptHex   []byte `json:"scripthex"`

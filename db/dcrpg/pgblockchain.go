@@ -3,6 +3,7 @@
 package dcrpg
 
 import (
+	"bytes"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -360,6 +361,8 @@ func (pgb *ChainDB) storeTxns(msgBlock *wire.MsgBlock, txTree int8,
 		return txRes
 	}
 
+	zeroHashStringBytes := []byte(chainhash.Hash{}.String())
+
 	// Check the new vins and update spending tx data in Addresses table
 	for it, txDbID := range *TxDbIDs {
 		for iv := range dbTxVins[it] {
@@ -376,6 +379,11 @@ func (pgb *ChainDB) storeTxns(msgBlock *wire.MsgBlock, txTree int8,
 					continue
 				}
 				log.Error("RetrieveFundingOutpointByTxIn:", err)
+				continue
+			}
+
+			// skip coinbase inputs
+			if bytes.Equal(zeroHashStringBytes, []byte(txHash)) {
 				continue
 			}
 
