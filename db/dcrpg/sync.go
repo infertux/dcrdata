@@ -50,7 +50,7 @@ func (db *ChainDB) SyncChainDB(client *rpcclient.Client, quit chan struct{}, new
 	// Total and rate statistics
 	var totalTxs, totalRTxs, totalSTxs, totalVins, totalVouts int64
 	var lastTxs, lastVins, lastVouts int64
-	tickTime := 5 * time.Second
+	tickTime := 20 * time.Second
 	ticker := time.NewTicker(tickTime)
 	startTime := time.Now()
 	o := sync.Once{}
@@ -111,7 +111,7 @@ func (db *ChainDB) SyncChainDB(client *rpcclient.Client, quit chan struct{}, new
 				if endRangeBlock > nodeHeight {
 					endRangeBlock = nodeHeight
 				}
-				log.Infof("Scanning blocks %d to %d...", ib, endRangeBlock)
+				log.Infof("Processing blocks %d to %d...", ib, endRangeBlock)
 			}
 		}
 		select {

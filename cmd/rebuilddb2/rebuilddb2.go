@@ -138,7 +138,7 @@ func mainCore() error {
 
 	var totalTxs, totalRTxs, totalSTxs, totalVins, totalVouts int64
 	var lastTxs, lastVins, lastVouts int64
-	tickTime := 5 * time.Second
+	tickTime := 10 * time.Second
 	ticker := time.NewTicker(tickTime)
 	startTime := time.Now()
 	o := sync.Once{}
@@ -199,7 +199,7 @@ func mainCore() error {
 				if endRangeBlock > height {
 					endRangeBlock = height
 				}
-				log.Infof("Scanning blocks %d to %d...", ib, endRangeBlock)
+				log.Infof("Processing blocks %d to %d...", ib, endRangeBlock)
 			}
 		}
 		select {
