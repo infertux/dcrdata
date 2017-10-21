@@ -36,8 +36,7 @@ func SetSpendingByVinID(db *sql.DB, vinDbID uint64, spendingTxDbID uint64,
 	// get funding details for vin and set them in the address table
 	dbtx, err := db.Begin()
 	if err != nil {
-		return 0, fmt.Errorf(`unable to begin database transaction: %v + %v `+
-			`(rollback)`, err, dbtx.Rollback())
+		return 0, fmt.Errorf(`unable to begin database transaction: %v`, err)
 	}
 
 	// Get the funding tx outpoint (vins table) for the vin DB ID
@@ -374,9 +373,7 @@ func InsertVin(db *sql.DB, dbVin dbtypes.VinTxProperty) (id uint64, err error) {
 func InsertVins(db *sql.DB, dbVins dbtypes.VinTxPropertyARRAY) ([]uint64, error) {
 	dbtx, err := db.Begin()
 	if err != nil {
-		return nil,
-			fmt.Errorf("unable to begin database transaction: %v + %v (rollback)",
-				err, dbtx.Rollback())
+		return nil, fmt.Errorf("unable to begin database transaction: %v", err)
 	}
 
 	stmt, err := dbtx.Prepare(internal.InsertVinRow)
@@ -431,9 +428,7 @@ func InsertVouts(db *sql.DB, dbVouts []*dbtypes.Vout, checked bool) ([]uint64, [
 	addressRows := make([]dbtypes.AddressRow, 0, len(dbVouts)*2)
 	dbtx, err := db.Begin()
 	if err != nil {
-		return nil, nil,
-			fmt.Errorf("unable to begin database transaction: %v + %v (rollback)",
-				err, dbtx.Rollback())
+		return nil, nil, fmt.Errorf("unable to begin database transaction: %v", err)
 	}
 
 	stmt, err := dbtx.Prepare(internal.MakeVoutInsertStatement(checked))
@@ -488,9 +483,7 @@ func InsertAddressOut(db *sql.DB, dbA *dbtypes.AddressRow) (uint64, error) {
 func InsertAddressOuts(db *sql.DB, dbAs []*dbtypes.AddressRow) ([]uint64, error) {
 	dbtx, err := db.Begin()
 	if err != nil {
-		return nil,
-			fmt.Errorf("unable to begin database transaction: %v + %v (rollback)",
-				err, dbtx.Rollback())
+		return nil, fmt.Errorf("unable to begin database transaction: %v", err)
 	}
 
 	stmt, err := dbtx.Prepare(internal.InsertAddressRow)
@@ -537,9 +530,7 @@ func InsertTx(db *sql.DB, dbTx *dbtypes.Tx, checked bool) (uint64, error) {
 func InsertTxns(db *sql.DB, dbTxns []*dbtypes.Tx, checked bool) ([]uint64, error) {
 	dbtx, err := db.Begin()
 	if err != nil {
-		return nil,
-			fmt.Errorf("unable to begin database transaction: %v + %v (rollback)",
-				err, dbtx.Rollback())
+		return nil, fmt.Errorf("unable to begin database transaction: %v", err)
 	}
 
 	stmt, err := dbtx.Prepare(internal.MakeTxInsertStatement(checked))
