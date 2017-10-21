@@ -123,7 +123,7 @@ func (pgb *ChainDB) Store(_ *blockdata.BlockData, msgBlock *wire.MsgBlock) error
 	if pgb == nil {
 		return nil
 	}
-	_, _, err := pgb.StoreBlock(msgBlock)
+	_, _, err := pgb.StoreBlock(msgBlock, true)
 	return err
 }
 
@@ -216,7 +216,8 @@ func (pgb *ChainDB) IndexAll() error {
 }
 
 // StoreBlock processes the input wire.MsgBlock, and saves to the data tables
-func (pgb *ChainDB) StoreBlock(msgBlock *wire.MsgBlock) (numVins int64, numVouts int64, err error) {
+func (pgb *ChainDB) StoreBlock(msgBlock *wire.MsgBlock,
+	updateAddressesSpendingInfo bool) (numVins int64, numVouts int64, err error) {
 	// Convert the wire.MsgBlock to a dbtypes.Block
 	dbBlock := dbtypes.MsgBlockToDBBlock(msgBlock, pgb.chainParams)
 
@@ -230,14 +231,14 @@ func (pgb *ChainDB) StoreBlock(msgBlock *wire.MsgBlock) (numVins int64, numVouts
 	resChanReg := make(chan storeTxnsResult)
 	go func() {
 		resChanReg <- pgb.storeTxns(msgBlock, wire.TxTreeRegular,
-			pgb.chainParams, &dbBlock.TxDbIDs)
+			pgb.chainParams, &dbBlock.TxDbIDs, updateAddressesSpendingInfo)
 	}()
 
 	// stake transactions
 	resChanStake := make(chan storeTxnsResult)
 	go func() {
 		resChanStake <- pgb.storeTxns(msgBlock, wire.TxTreeStake,
-			pgb.chainParams, &dbBlock.STxDbIDs)
+			pgb.chainParams, &dbBlock.STxDbIDs, updateAddressesSpendingInfo)
 	}()
 
 	errReg := <-resChanReg
@@ -300,7 +301,8 @@ func (r *storeTxnsResult) Error() string {
 }
 
 func (pgb *ChainDB) storeTxns(msgBlock *wire.MsgBlock, txTree int8,
-	chainParams *chaincfg.Params, TxDbIDs *[]uint64) storeTxnsResult {
+	chainParams *chaincfg.Params, TxDbIDs *[]uint64,
+	updateAddressesSpendingInfo bool) storeTxnsResult {
 	dbTransactions, dbTxVouts, dbTxVins := dbtypes.ExtractBlockTransactions(
 		msgBlock, txTree, chainParams)
 
@@ -358,6 +360,10 @@ func (pgb *ChainDB) storeTxns(msgBlock *wire.MsgBlock, txTree int8,
 	if err != nil {
 		log.Error("InsertAddressOuts:", err)
 		txRes.err = err
+		return txRes
+	}
+
+	if !updateAddressesSpendingInfo {
 		return txRes
 	}
 

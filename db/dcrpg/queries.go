@@ -401,10 +401,11 @@ func InsertVouts(db *sql.DB, dbVouts []*dbtypes.Vout, checked bool) ([]uint64, [
 		}
 		for _, addr := range vout.ScriptPubKeyData.Addresses {
 			addressRows = append(addressRows, dbtypes.AddressRow{
-				Address:       addr,
-				FundingTxHash: vout.TxHash,
-				VoutDbID:      id,
-				Value:         vout.Value,
+				Address:            addr,
+				FundingTxHash:      vout.TxHash,
+				FundingTxVoutIndex: vout.TxIndex,
+				VoutDbID:           id,
+				Value:              vout.Value,
 			})
 		}
 		ids = append(ids, id)

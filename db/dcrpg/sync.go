@@ -133,7 +133,7 @@ func (db *ChainDB) SyncChainDB(client *rpcclient.Client, quit chan struct{}, new
 		}
 
 		var numVins, numVouts int64
-		if numVins, numVouts, err = db.StoreBlock(block.MsgBlock()); err != nil {
+		if numVins, numVouts, err = db.StoreBlock(block.MsgBlock(), true); err != nil {
 			return ib - 1, fmt.Errorf("StoreBlock failed: %v", err)
 		}
 		totalVins += numVins

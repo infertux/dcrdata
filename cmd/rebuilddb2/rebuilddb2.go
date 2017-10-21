@@ -221,7 +221,8 @@ func mainCore() error {
 		}
 
 		var numVins, numVouts int64
-		if numVins, numVouts, err = db.StoreBlock(block.MsgBlock()); err != nil {
+		numVins, numVouts, err = db.StoreBlock(block.MsgBlock(), cfg.UpdateAddrSpendInfo)
+		if err != nil {
 			return fmt.Errorf("StoreBlock failed: %v", err)
 		}
 		totalVins += numVins
