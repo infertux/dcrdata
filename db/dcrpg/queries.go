@@ -1,6 +1,10 @@
+// Copyright (c) 2017, The dcrdata developers
+// See LICENSE for details.
+
 package dcrpg
 
 import (
+	"bytes"
 	"database/sql"
 	"fmt"
 
@@ -14,9 +18,67 @@ func RetrieveVoutIDByOutpoint(db *sql.DB, txHash string, voutIndex uint32) (id u
 	return
 }
 
-func SetSpendingForAddress(db *sql.DB, addrDbID uint64, spendingTxDbID uint64,
+func SetSpendingForFundingOP(db *sql.DB,
+	fundingTxHash string, fundingTxVoutIndex uint32,
+	spendingTxDbID uint64, spendingTxHash string, spendingTxVinIndex uint32,
+	vinDbID uint64) (int64, error) {
+	res, err := db.Exec(internal.SetAddressSpendingForOutpoint,
+		fundingTxHash, fundingTxVoutIndex,
+		spendingTxDbID, spendingTxHash, spendingTxVinIndex, vinDbID)
+	if err != nil || res == nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func SetSpendingByVinID(db *sql.DB, vinDbID uint64, spendingTxDbID uint64,
+	spendingTxHash string, spendingTxVinIndex uint32) (int64, error) {
+	// get funding details for vin and set them in the address table
+	dbtx, err := db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf(`unable to begin database transaction: %v + %v `+
+			`(rollback)`, err, dbtx.Rollback())
+	}
+
+	// Get the funding tx outpoint (vins table) for the vin DB ID
+	var fundingTxHash string
+	var fundingTxVoutIndex uint32
+	var tree int8
+	err = dbtx.QueryRow(internal.SelectFundingOutpointByVinID, vinDbID).
+		Scan(&fundingTxHash, &fundingTxVoutIndex, &tree)
+	if err != nil {
+		return 0, fmt.Errorf(`SelectFundingOutpointByVinID: %v + %v `+
+			`(rollback)`, err, dbtx.Rollback())
+	}
+
+	// skip coinbase inputs
+	if bytes.Equal(zeroHashStringBytes, []byte(fundingTxHash)) {
+		return 0, nil
+	}
+
+	// Set the spending tx info (addresses table) for the vin DB ID
+	var res sql.Result
+	res, err = dbtx.Exec(internal.SetAddressSpendingForOutpoint,
+		fundingTxHash, fundingTxVoutIndex,
+		spendingTxDbID, spendingTxHash, spendingTxVinIndex, vinDbID)
+	if err != nil || res == nil {
+		return 0, fmt.Errorf(`SetAddressSpendingForOutpoint: %v + %v `+
+			`(rollback)`, err, dbtx.Rollback())
+	}
+
+	var N int64
+	N, err = res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf(`RowsAffected: %v + %v (rollback)`,
+			err, dbtx.Rollback())
+	}
+
+	return N, dbtx.Commit()
+}
+
+func SetSpendingForAddressDbID(db *sql.DB, addrDbID uint64, spendingTxDbID uint64,
 	spendingTxHash string, spendingTxVinIndex uint32, vinDbID uint64) error {
-	_, err := db.Exec(internal.SetAddressSpending, addrDbID, spendingTxDbID,
+	_, err := db.Exec(internal.SetAddressSpendingForID, addrDbID, spendingTxDbID,
 		spendingTxHash, spendingTxVinIndex, vinDbID)
 	return err
 }

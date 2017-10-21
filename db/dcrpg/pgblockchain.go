@@ -1,9 +1,9 @@
 // Copyright (c) 2017, The dcrdata developers
 // See LICENSE for details.
+
 package dcrpg
 
 import (
-	"bytes"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -13,6 +13,10 @@ import (
 	"github.com/decred/dcrd/chaincfg"
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/wire"
+)
+
+var (
+	zeroHashStringBytes = []byte(chainhash.Hash{}.String())
 )
 
 type ChainDB struct {
@@ -292,8 +296,8 @@ func (pgb *ChainDB) StoreBlock(msgBlock *wire.MsgBlock,
 }
 
 type storeTxnsResult struct {
-	numVins, numVouts int64
-	err               error
+	numVins, numVouts, numAddresses int64
+	err                             error
 }
 
 func (r *storeTxnsResult) Error() string {
@@ -367,8 +371,6 @@ func (pgb *ChainDB) storeTxns(msgBlock *wire.MsgBlock, txTree int8,
 		return txRes
 	}
 
-	zeroHashStringBytes := []byte(chainhash.Hash{}.String())
-
 	// Check the new vins and update spending tx data in Addresses table
 	for it, txDbID := range *TxDbIDs {
 		for iv := range dbTxVins[it] {
@@ -378,6 +380,16 @@ func (pgb *ChainDB) storeTxns(msgBlock *wire.MsgBlock, txTree int8,
 			// vinDbID, txHash, txIndex, _, err := RetrieveFundingOutpointByTxIn(
 			// 	pgb.db, vin.TxID, vin.TxIndex)
 			vinDbID := dbTransactions[it].VinDbIds[iv]
+			// Single transaction to get funding tx info for the vin, get
+			// address row index for the funding tx, and set spending info.
+			var numAddressRowsSet int64
+			numAddressRowsSet, err = SetSpendingByVinID(pgb.db, vinDbID, txDbID, vin.TxID, vin.TxIndex)
+			if err != nil {
+				log.Errorf("SetSpendingByVinID: %v", err)
+			}
+			txRes.numAddresses += numAddressRowsSet
+
+			/* separate transactions
 			txHash, txIndex, _, err := RetrieveFundingOutpointByVinID(pgb.db, vinDbID)
 			if err != nil && err != sql.ErrNoRows {
 				if err != sql.ErrNoRows {
@@ -393,24 +405,14 @@ func (pgb *ChainDB) storeTxns(msgBlock *wire.MsgBlock, txTree int8,
 				continue
 			}
 
-			// Find the address rows for the vout (txHash:txIndex) obtained above
-			addrDbIDs, addresses, err := RetrieveAddressIDsByOutpoint(pgb.db, txHash, txIndex)
+			var numAddressRowsSet int64
+			numAddressRowsSet, err = SetSpendingForFundingOP(pgb.db, txHash, txIndex, // funding
+				txDbID, vin.TxID, vin.TxIndex, vinDbID) // spending
 			if err != nil {
-				if err != sql.ErrNoRows {
-					log.Warnf("No rows in addresses table found for outpoint %s:%d", txHash, txIndex)
-					continue
-				}
-				log.Error("RetrieveAddressIDsByOutpoint:", err)
-				continue
+				log.Errorf("SetSpendingForFundingOP: %v", err)
 			}
-			for ia, addrDbID := range addrDbIDs {
-				// Store spending tx info in the addresses row with found id
-				err = SetSpendingForAddress(pgb.db, addrDbID,
-					txDbID, vin.TxID, vin.TxIndex, vinDbID)
-				if err != nil {
-					log.Errorf("SetSpendingForAddress (addr=%s): %v", addresses[ia], err)
-				}
-			}
+			txRes.numAddresses += numAddressRowsSet
+			*/
 		}
 	}
 

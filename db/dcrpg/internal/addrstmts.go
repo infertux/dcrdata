@@ -49,9 +49,12 @@ const (
 	SelectAddressIDByVoutIDAddress = `SELECT id FROM addresses
 		WHERE address=$1 and vout_row_id=$2;`
 
-	SetAddressSpending = `UPDATE addresses SET spending_tx_row_id = $2, 
+	SetAddressSpendingForID = `UPDATE addresses SET spending_tx_row_id = $2, 
 		spending_tx_hash = $3, spending_tx_vin_index = $4, vin_row_id = $5 
 		WHERE id=$1;`
+	SetAddressSpendingForOutpoint = `UPDATE addresses SET spending_tx_row_id = $3, 
+		spending_tx_hash = $4, spending_tx_vin_index = $5, vin_row_id = $6 
+		WHERE funding_tx_hash=$1 and funding_tx_vout_index=$2;`
 
 	IndexAddressTableOnAddress = `CREATE INDEX uix_addresses_address
 		ON addresses(address);`
