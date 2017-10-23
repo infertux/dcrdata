@@ -124,6 +124,38 @@ func CreateTables(db *sql.DB) error {
 	return err
 }
 
+// Create one of the known tables by name
+func CreateTable(db *sql.DB, tableName string) error {
+	var err error
+	createCommand, tableNameFound := createTableStatements[tableName]
+	if !tableNameFound {
+		log.Errorf("Unknown table name %v", tableName)
+	}
+
+	var exists bool
+	exists, err = TableExists(db, tableName)
+	if err != nil {
+		return err
+	}
+
+	if !exists {
+		log.Infof("Creating the \"%s\" table.", tableName)
+		_, err = db.Exec(createCommand)
+		if err != nil {
+			return err
+		}
+		_, err = db.Exec(fmt.Sprintf(`COMMENT ON TABLE %s
+			IS 'v1';`, tableName))
+		if err != nil {
+			return err
+		}
+	} else {
+		log.Debugf("Table \"%s\" exist.", tableName)
+	}
+
+	return err
+}
+
 func TableVersions(db *sql.DB) map[string]int32 {
 	versions := map[string]int32{}
 	for tableName := range createTableStatements {
@@ -240,13 +272,13 @@ func DeindexAddressTableOnAddress(db *sql.DB) (err error) {
 	return
 }
 
-func IndexAddressTableOnAddressAndVoutID(db *sql.DB) (err error) {
-	_, err = db.Exec(internal.IndexAddressTableOnAddressAndVoutID)
+func IndexAddressTableOnVoutID(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.IndexAddressTableOnVoutID)
 	return
 }
 
-func DeindexAddressTableOnAddressAndVoutID(db *sql.DB) (err error) {
-	_, err = db.Exec(internal.DeindexAddressTableOnAddressAndVoutID)
+func DeindexAddressTableOnVoutID(db *sql.DB) (err error) {
+	_, err = db.Exec(internal.DeindexAddressTableOnVoutID)
 	return
 }
 

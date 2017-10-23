@@ -221,7 +221,7 @@ func mainCore() error {
 		}
 
 		var numVins, numVouts int64
-		numVins, numVouts, err = db.StoreBlock(block.MsgBlock(), cfg.UpdateAddrSpendInfo)
+		numVins, numVouts, err = db.StoreBlock(block.MsgBlock(), !cfg.UpdateAddrSpendInfo)
 		if err != nil {
 			return fmt.Errorf("StoreBlock failed: %v", err)
 		}
@@ -246,12 +246,28 @@ func mainCore() error {
 		if err = db.IndexAll(); err != nil {
 			return fmt.Errorf("IndexAll failed: %v", err)
 		}
+		if !cfg.UpdateAddrSpendInfo {
+			err = db.IndexAddressTable()
+		}
 	}
 
-	log.Infof("Rebuild finished: %d blocks, %d transactions, %d ins, %d outs",
-		height, totalTxs, totalVins, totalVouts)
+	if cfg.UpdateAddrSpendInfo {
+		db.DeindexAddressTable()
+		log.Infof("Populating spending tx info in address table...")
+		numAddresses, err := db.UpdateSpendingInfoInAllAddresses()
+		if err != nil {
+			log.Errorf("UpdateSpendingInfoInAllAddresses FAILED: %v", err)
+		}
+		log.Infof("Updated %d rows of address table", numAddresses)
+		if err = db.IndexAddressTable(); err != nil {
+			log.Errorf("IndexAddressTable FAILED: %v", err)
+		}
+	}
 
-	return nil
+	log.Infof("Rebuild finished at height %d. Delta: %d blocks, %d transactions, %d ins, %d outs",
+		height, height-startHeight+1, totalTxs, totalVins, totalVouts)
+
+	return err
 }
 
 func main() {

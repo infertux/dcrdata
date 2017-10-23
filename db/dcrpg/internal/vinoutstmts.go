@@ -35,6 +35,9 @@ const (
 	DeindexVinTableOnVins     = `DROP INDEX uix_vin;`
 	DeindexVinTableOnPrevOuts = `DROP INDEX uix_vin_prevout;`
 
+	SelectVinIDsALL = `SELECT id FROM vins;`
+	CountRow        = `SELECT reltuples::BIGINT AS estimate FROM pg_class WHERE relname='vins';`
+
 	SelectSpendingTxsByPrevTx = `SELECT id, tx_hash, tx_index, prev_tx_index FROM vins WHERE prev_tx_hash=$1;`
 	SelectSpendingTxByPrevOut = `SELECT id, tx_hash, tx_index FROM vins 
 		WHERE prev_tx_hash=$1 AND prev_tx_index=$2;`
@@ -44,6 +47,7 @@ const (
 		WHERE tx_hash=$1 AND tx_index=$2;`
 	SelectFundingOutpointByVinID = `SELECT prev_tx_hash, prev_tx_index, prev_tx_tree FROM vins WHERE id=$1;`
 	SelectSpendingTxByVinID      = `SELECT tx_hash, tx_index, tx_tree FROM vins WHERE id=$1;`
+	SelectAllVinInfoByID         = `SELECT * FROM vins WHERE id=$1;`
 
 	CreateVinType = `CREATE TYPE vin_t AS (
 		prev_tx_hash TEXT,

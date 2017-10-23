@@ -34,7 +34,7 @@ const (
 		address TEXT,
 		funding_tx_row_id INT8,
 		funding_tx_hash TEXT,
-		funding_tx_vout_index INT4,
+		funding_tx_vout_index INT8,
 		vout_row_id INT8,
 		value INT8,
 		spending_tx_row_id INT8,
@@ -60,11 +60,11 @@ const (
 		ON addresses(address);`
 	DeindexAddressTableOnAddress = `DROP INDEX uix_addresses_address;`
 
-	IndexAddressTableOnAddressAndVoutID = `CREATE UNIQUE INDEX uix_addresses_address_vout_id
-		ON addresses(address, vout_row_id);`
-	DeindexAddressTableOnAddressAndVoutID = `DROP INDEX uix_addresses_address_vout_id;`
+	IndexAddressTableOnVoutID = `CREATE UNIQUE INDEX uix_addresses_vout_id
+		ON addresses(vout_row_id);`
+	DeindexAddressTableOnVoutID = `DROP INDEX uix_addresses_vout_id;`
 
 	IndexAddressTableOnFundingTx = `CREATE INDEX uix_addresses_funding_tx
-		ON addresses(funding_tx_hash);`
+		ON addresses(funding_tx_hash, funding_tx_vout_index);`
 	DeindexAddressTableOnFundingTx = `DROP INDEX uix_addresses_funding_tx;`
 )

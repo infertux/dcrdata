@@ -4,6 +4,7 @@
 package dcrpg
 
 import (
+	"bytes"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -166,7 +167,7 @@ func (pgb *ChainDB) DeindexAll() error {
 		log.Warn(err)
 		errAny = err
 	}
-	if err = DeindexAddressTableOnAddressAndVoutID(pgb.db); err != nil {
+	if err = DeindexAddressTableOnVoutID(pgb.db); err != nil {
 		log.Warn(err)
 		errAny = err
 	}
@@ -207,16 +208,42 @@ func (pgb *ChainDB) IndexAll() error {
 	if err := IndexVoutTableOnTxHash(pgb.db); err != nil {
 		return err
 	}
+	// log.Infof("Indexing addresses table on address...")
+	// if err := IndexAddressTableOnAddress(pgb.db); err != nil {
+	// 	return err
+	// }
+	// log.Infof("Indexing addresses table on vout Db ID...")
+	// if err := IndexAddressTableOnVoutID(pgb.db); err != nil {
+	// 	return err
+	// }
+	log.Infof("Indexing addresses table on funding tx hash...")
+	return IndexAddressTableOnTxHash(pgb.db)
+}
+
+// IndexAddressTable creates the indexes on the address table on the vout ID and
+// address columns, separately.
+func (pgb *ChainDB) IndexAddressTable() error {
 	log.Infof("Indexing addresses table on address...")
 	if err := IndexAddressTableOnAddress(pgb.db); err != nil {
 		return err
 	}
-	log.Infof("Indexing addresses table on address and vout Db ID...")
-	if err := IndexAddressTableOnAddressAndVoutID(pgb.db); err != nil {
-		return err
+	log.Infof("Indexing addresses table on vout Db ID...")
+	return IndexAddressTableOnVoutID(pgb.db)
+}
+
+// DeindexAddressTable drops the vin ID and address column indexes for the
+// address table.
+func (pgb *ChainDB) DeindexAddressTable() error {
+	var errAny error
+	if err := DeindexAddressTableOnAddress(pgb.db); err != nil {
+		log.Warn(err)
+		errAny = err
 	}
-	log.Infof("Indexing addresses table on funding tx hash...")
-	return IndexAddressTableOnTxHash(pgb.db)
+	if err := DeindexAddressTableOnVoutID(pgb.db); err != nil {
+		log.Warn(err)
+		errAny = err
+	}
+	return errAny
 }
 
 // StoreBlock processes the input wire.MsgBlock, and saves to the data tables
@@ -380,19 +407,42 @@ func (pgb *ChainDB) storeTxns(msgBlock *wire.MsgBlock, txTree int8,
 			// vinDbID, txHash, txIndex, _, err := RetrieveFundingOutpointByTxIn(
 			// 	pgb.db, vin.TxID, vin.TxIndex)
 			vinDbID := dbTransactions[it].VinDbIds[iv]
+
 			// Single transaction to get funding tx info for the vin, get
 			// address row index for the funding tx, and set spending info.
+			// var numAddressRowsSet int64
+			// numAddressRowsSet, err = SetSpendingByVinID(pgb.db, vinDbID, txDbID, vin.TxID, vin.TxIndex)
+			// if err != nil {
+			// 	log.Errorf("SetSpendingByVinID: %v", err)
+			// }
+			// txRes.numAddresses += numAddressRowsSet
+
+			// prevout, ok := pgb.vinPrevOutpoints[vinDbID]
+			// if !ok {
+			// 	log.Errorf("No funding tx info found for vin %s:%d (prev %s)",
+			// 		vin.TxID, vin.TxIndex, vin.PrevOut)
+			// 	continue
+			// }
+			// delete(pgb.vinPrevOutpoints, vinDbID)
+
+			// skip coinbase inputs
+			if bytes.Equal(zeroHashStringBytes, []byte(vin.PrevTxHash)) {
+				continue
+			}
+
 			var numAddressRowsSet int64
-			numAddressRowsSet, err = SetSpendingByVinID(pgb.db, vinDbID, txDbID, vin.TxID, vin.TxIndex)
+			numAddressRowsSet, err = SetSpendingForFundingOP(pgb.db,
+				vin.PrevTxHash, vin.PrevTxIndex, // funding
+				txDbID, vin.TxID, vin.TxIndex, vinDbID) // spending
 			if err != nil {
-				log.Errorf("SetSpendingByVinID: %v", err)
+				log.Errorf("SetSpendingForFundingOP: %v", err)
 			}
 			txRes.numAddresses += numAddressRowsSet
 
 			/* separate transactions
 			txHash, txIndex, _, err := RetrieveFundingOutpointByVinID(pgb.db, vinDbID)
 			if err != nil && err != sql.ErrNoRows {
-				if err != sql.ErrNoRows {
+				if err == sql.ErrNoRows {
 					log.Warnf("No funding transaction found for input %s:%d", vin.TxID, vin.TxIndex)
 					continue
 				}
@@ -417,4 +467,79 @@ func (pgb *ChainDB) storeTxns(msgBlock *wire.MsgBlock, txTree int8,
 	}
 
 	return txRes
+}
+
+// UpdateSpendingInfoInAllAddresses rebuilds the spending transaction info
+// columns of the address table.
+func (pgb *ChainDB) UpdateSpendingInfoInAllAddresses() (int64, error) {
+	// Get the full list of vinDbIDs
+	allVinDbIDs, err := RetrieveAllVinDbIDs(pgb.db)
+	if err != nil {
+		log.Errorf("RetrieveAllVinDbIDs: %v", err)
+		return 0, err
+	}
+
+	log.Infof("Updating spending tx info for %d addresses...", len(allVinDbIDs))
+	var numAddresses int64
+	for i := 0; i < len(allVinDbIDs); i += 1000 {
+		//for i, vinDbID := range allVinDbIDs {
+		if i%250000 == 0 {
+			endRange := i + 250000 - 1
+			if endRange > len(allVinDbIDs) {
+				endRange = len(allVinDbIDs)
+			}
+			log.Infof("Updating from vins %d to %d...", i, endRange)
+		}
+
+		/*var numAddressRowsSet int64
+		numAddressRowsSet, err = SetSpendingForVinDbID(pgb.db, vinDbID)
+		if err != nil {
+			log.Errorf("SetSpendingForFundingOP: %v", err)
+			continue
+		}
+		numAddresses += numAddressRowsSet*/
+		var numAddressRowsSet int64
+		endChunk := i + 1000
+		if endChunk > len(allVinDbIDs) {
+			endChunk = len(allVinDbIDs)
+		}
+		_, numAddressRowsSet, err = SetSpendingForVinDbIDs(pgb.db,
+			allVinDbIDs[i:endChunk])
+		if err != nil {
+			log.Errorf("SetSpendingForFundingOP: %v", err)
+			continue
+		}
+		numAddresses += numAddressRowsSet
+
+		/* // Get the funding and spending tx info for the vin
+		prevoutHash, prevoutVoutInd, _, txHash, txIndex, _, erri :=
+			RetrieveVinByID(pgb.db, vinDbID)
+		if erri != nil {
+			if erri == sql.ErrNoRows {
+				log.Warnf("No funding transaction found for vin DB ID %d", vinDbID)
+				continue
+			}
+			log.Error("RetrieveFundingOutpointByTxIn:", erri)
+			continue
+		}
+
+		// skip coinbase inputs
+		if bytes.Equal(zeroHashStringBytes, []byte(txHash)) {
+			continue
+		}
+
+		// Set the spending tx for the address rows with a matching funding tx
+		var numAddressRowsSet int64
+		numAddressRowsSet, err = SetSpendingForFundingOP(pgb.db,
+			prevoutHash, prevoutVoutInd, // funding
+			0, txHash, txIndex, vinDbID) // spending
+		// DANGER!!!! missing txDbID above
+		if err != nil {
+			log.Errorf("SetSpendingForFundingOP: %v", err)
+			continue
+		}
+		numAddresses += numAddressRowsSet */
+	}
+
+	return numAddresses, err
 }
